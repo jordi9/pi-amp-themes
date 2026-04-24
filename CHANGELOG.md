@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.2.7
+
+- Refresh editor context and cost stats after `/reload` by reading the latest extension context.
+- Move tests to Vitest and include them in `release:check`.
+
 ## 0.2.6
 
 - Keep Amp editor thinking state stable after resumed sessions that lack a thinking-level entry.
