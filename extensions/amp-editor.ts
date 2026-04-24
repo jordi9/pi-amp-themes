@@ -164,10 +164,14 @@ class AmpEditor extends CustomEditor {
     tui: any,
     theme: any,
     keybindings: any,
-    private readonly ctx: ExtensionContext,
+    private readonly getCtx: () => ExtensionContext,
     private readonly getThinkingLevel: () => string,
   ) {
     super(tui, theme, keybindings, { paddingX: 1 });
+  }
+
+  private get ctx(): ExtensionContext {
+    return this.getCtx();
   }
 
   render(width: number): string[] {
@@ -312,14 +316,16 @@ class AmpEditor extends CustomEditor {
 export default function (pi: ExtensionAPI) {
   const activeToolExecutions = new Set<string>();
   let activeThinkingLevel = "off";
+  let activeCtx: ExtensionContext | undefined;
 
   pi.on("session_start", (_event, ctx) => {
     if (!ctx.hasUI) return;
 
+    activeCtx = ctx;
     activeThinkingLevel = getSafeThinkingLevel(pi, ctx.sessionManager);
 
     ctx.ui.setEditorComponent((tui, theme, keybindings) =>
-      new AmpEditor(tui, theme, keybindings, ctx, () => activeThinkingLevel),
+      new AmpEditor(tui, theme, keybindings, () => activeCtx ?? ctx, () => activeThinkingLevel),
     );
 
     ctx.ui.setWorkingIndicator({

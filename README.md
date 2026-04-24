@@ -32,6 +32,7 @@ If `npm:pi-tool-display` is installed separately, remove it. `amp-themes` alread
 
 ```bash
 npm install
+npm test
 npm run typecheck
 npm run check
 npm run pack:check

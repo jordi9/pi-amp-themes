@@ -1,5 +1,4 @@
-import assert from "node:assert/strict";
-import test from "node:test";
+import { expect, test } from "vitest";
 
 import { UserMessageComponent, type ExtensionAPI, type ExtensionContext } from "@mariozechner/pi-coding-agent";
 
@@ -13,6 +12,11 @@ type ThemeStub = {
   fg(color: string, text: string): string;
   italic?(text: string): string;
 };
+
+function expectDefined<T>(value: T | undefined, message: string): T {
+  expect(value, message).toBeDefined();
+  return value as T;
+}
 
 function createPiStub(getThinkingLevel: () => string) {
   const handlers = new Map<string, EventHandler>();
@@ -78,6 +82,34 @@ function createSessionManagerWithoutThinking() {
   };
 }
 
+function createSessionManagerWithCost(cost: number) {
+  const entries = [
+    {
+      type: "message",
+      id: "assistant-1",
+      parentId: null,
+      timestamp: new Date().toISOString(),
+      message: {
+        role: "assistant",
+        content: [],
+        usage: { cost: { total: cost } },
+      },
+    },
+  ];
+
+  return {
+    getEntries() {
+      return entries;
+    },
+    getLeafId() {
+      return "assistant-1";
+    },
+    getSessionName() {
+      return undefined;
+    },
+  };
+}
+
 function resetUserMessagePatch(): void {
   const prototype = UserMessageComponent.prototype as unknown as {
     render: UserMessageComponent["render"];
@@ -114,8 +146,7 @@ test("amp user message render stays safe after session manager becomes stale", (
 
   ampUserMessageExtension(pi);
 
-  const sessionStart = handlers.get("session_start");
-  assert.ok(sessionStart, "session_start handler should be registered");
+  const sessionStart = expectDefined(handlers.get("session_start"), "session_start handler should be registered");
 
   sessionStart(
     { type: "session_start", reason: "startup" },
@@ -127,10 +158,10 @@ test("amp user message render stays safe after session manager becomes stale", (
   );
 
   const message = new UserMessageComponent("hello from amp");
-  assert.doesNotThrow(() => message.render(48));
+  expect(() => message.render(48)).not.toThrow();
 
   stale = true;
-  assert.doesNotThrow(() => message.render(48));
+  expect(() => message.render(48)).not.toThrow();
 
   resetUserMessagePatch();
 });
@@ -141,8 +172,7 @@ test("amp editor working message waits until assistant update before streaming",
 
   ampEditorExtension(pi);
 
-  const sessionStart = handlers.get("session_start");
-  assert.ok(sessionStart, "session_start handler should be registered");
+  const sessionStart = expectDefined(handlers.get("session_start"), "session_start handler should be registered");
 
   const ctx = {
     hasUI: true,
@@ -167,19 +197,17 @@ test("amp editor working message waits until assistant update before streaming",
   } as unknown as ExtensionContext;
 
   sessionStart({ type: "session_start", reason: "startup" }, ctx);
-  assert.deepEqual(workingMessages, []);
+  expect(workingMessages).toEqual([]);
 
-  const beforeAgentStart = handlers.get("before_agent_start");
-  assert.ok(beforeAgentStart, "before_agent_start handler should be registered");
+  const beforeAgentStart = expectDefined(handlers.get("before_agent_start"), "before_agent_start handler should be registered");
   beforeAgentStart({ type: "before_agent_start" }, ctx);
-  assert.equal(workingMessages.at(-1), "Waiting for response...");
+  expect(workingMessages.at(-1)).toBe("Waiting for response...");
 
   const messageStart = handlers.get("message_start");
   messageStart?.({ type: "message_start", message: { role: "assistant", content: [] } }, ctx);
-  assert.equal(workingMessages.at(-1), "Waiting for response...");
+  expect(workingMessages.at(-1)).toBe("Waiting for response...");
 
-  const messageUpdate = handlers.get("message_update");
-  assert.ok(messageUpdate, "message_update handler should be registered");
+  const messageUpdate = expectDefined(handlers.get("message_update"), "message_update handler should be registered");
   messageUpdate(
     {
       type: "message_update",
@@ -188,7 +216,7 @@ test("amp editor working message waits until assistant update before streaming",
     },
     ctx,
   );
-  assert.equal(workingMessages.at(-1), "Streaming response...");
+  expect(workingMessages.at(-1)).toBe("Streaming response...");
 });
 
 test("amp editor shows running tools while tool execution is active", () => {
@@ -197,8 +225,7 @@ test("amp editor shows running tools while tool execution is active", () => {
 
   ampEditorExtension(pi);
 
-  const toolExecutionStart = handlers.get("tool_execution_start");
-  assert.ok(toolExecutionStart, "tool_execution_start handler should be registered");
+  const toolExecutionStart = expectDefined(handlers.get("tool_execution_start"), "tool_execution_start handler should be registered");
 
   toolExecutionStart(
     { type: "tool_execution_start", toolCallId: "tool-1", toolName: "read", args: {} },
@@ -212,7 +239,7 @@ test("amp editor shows running tools while tool execution is active", () => {
     } as unknown as ExtensionContext,
   );
 
-  assert.equal(workingMessages.at(-1), "Running tools...");
+  expect(workingMessages.at(-1)).toBe("Running tools...");
 });
 
 test("amp editor keeps working message ordered while tools are active", () => {
@@ -229,29 +256,74 @@ test("amp editor keeps working message ordered while tools are active", () => {
 
   ampEditorExtension(pi);
 
-  const messageUpdate = handlers.get("message_update");
-  const toolExecutionStart = handlers.get("tool_execution_start");
-  const toolExecutionEnd = handlers.get("tool_execution_end");
-  assert.ok(messageUpdate, "message_update handler should be registered");
-  assert.ok(toolExecutionStart, "tool_execution_start handler should be registered");
-  assert.ok(toolExecutionEnd, "tool_execution_end handler should be registered");
+  const messageUpdate = expectDefined(handlers.get("message_update"), "message_update handler should be registered");
+  const toolExecutionStart = expectDefined(handlers.get("tool_execution_start"), "tool_execution_start handler should be registered");
+  const toolExecutionEnd = expectDefined(handlers.get("tool_execution_end"), "tool_execution_end handler should be registered");
 
   messageUpdate({ type: "message_update", message: { role: "assistant", content: [] } }, ctx);
-  assert.deepEqual(workingMessages, ["Streaming response..."]);
+  expect(workingMessages).toEqual(["Streaming response..."]);
 
   toolExecutionStart({ type: "tool_execution_start", toolCallId: "tool-1", toolName: "read", args: {} }, ctx);
-  assert.deepEqual(workingMessages, ["Streaming response...", "Running tools..."]);
+  expect(workingMessages).toEqual(["Streaming response...", "Running tools..."]);
 
   messageUpdate({ type: "message_update", message: { role: "assistant", content: [] } }, ctx);
-  assert.deepEqual(workingMessages, ["Streaming response...", "Running tools..."]);
+  expect(workingMessages).toEqual(["Streaming response...", "Running tools..."]);
 
   toolExecutionEnd({ type: "tool_execution_end", toolCallId: "tool-1", toolName: "read", result: {}, isError: false }, ctx);
-  assert.deepEqual(workingMessages, ["Streaming response...", "Running tools...", "Waiting for response..."]);
+  expect(workingMessages).toEqual(["Streaming response...", "Running tools...", "Waiting for response..."]);
 
-  const agentEnd = handlers.get("agent_end");
-  assert.ok(agentEnd, "agent_end handler should be registered");
+  const agentEnd = expectDefined(handlers.get("agent_end"), "agent_end handler should be registered");
   agentEnd({ type: "agent_end", messages: [] }, ctx);
-  assert.deepEqual(workingMessages, ["Streaming response...", "Running tools...", "Waiting for response..."]);
+  expect(workingMessages).toEqual(["Streaming response...", "Running tools...", "Waiting for response..."]);
+});
+
+test("amp editor uses latest context and cost after reload", () => {
+  const { pi, handlers } = createPiStub(() => "high");
+
+  ampEditorExtension(pi);
+
+  let editorFactory:
+    | ((tui: unknown, theme: ThemeStub, keybindings: { matches(): boolean }) => { render(width: number): string[] })
+    | undefined;
+
+  const sessionStart = expectDefined(handlers.get("session_start"), "session_start handler should be registered");
+
+  const createCtx = (percent: number, cost: number) => ({
+    hasUI: true,
+    cwd: process.cwd(),
+    model: {
+      id: "claude-sonnet-4-20250514",
+      contextWindow: 272000,
+      reasoning: true,
+    },
+    modelRegistry: { isUsingOAuth: () => true },
+    sessionManager: createSessionManagerWithCost(cost),
+    getContextUsage: () => ({ percent, contextWindow: 272000 }),
+    ui: {
+      theme: createThemeStub(),
+      setEditorComponent(factory: typeof editorFactory) {
+        editorFactory = factory;
+      },
+      setWorkingIndicator() {},
+      setWorkingMessage() {},
+      setFooter() {},
+    },
+  }) as unknown as ExtensionContext;
+
+  sessionStart({ type: "session_start", reason: "startup" }, createCtx(12, 1.23));
+  const createEditor = expectDefined(editorFactory, "editor factory should be registered");
+
+  const editor = createEditor(
+    { requestRender() {}, terminal: { rows: 24 } },
+    createThemeStub(),
+    { matches: () => false },
+  );
+
+  expect(editor.render(100).join("\n")).toMatch(/12% of 272k · \$1\.23 \(sub\)/);
+
+  sessionStart({ type: "session_start", reason: "reload" }, createCtx(72, 16.37));
+
+  expect(editor.render(100).join("\n")).toMatch(/72% of 272k · \$16\.37 \(sub\)/);
 });
 
 test("amp editor uses runtime thinking level after resume when session has no thinking entry", () => {
@@ -263,8 +335,7 @@ test("amp editor uses runtime thinking level after resume when session has no th
     | ((tui: unknown, theme: ThemeStub, keybindings: { matches(): boolean }) => { render(width: number): string[] })
     | undefined;
 
-  const sessionStart = handlers.get("session_start");
-  assert.ok(sessionStart, "session_start handler should be registered");
+  const sessionStart = expectDefined(handlers.get("session_start"), "session_start handler should be registered");
 
   sessionStart(
     { type: "session_start", reason: "resume" },
@@ -291,15 +362,15 @@ test("amp editor uses runtime thinking level after resume when session has no th
     } as unknown as ExtensionContext,
   );
 
-  assert.ok(editorFactory, "editor factory should be registered");
+  const createEditor = expectDefined(editorFactory, "editor factory should be registered");
 
-  const editor = editorFactory(
+  const editor = createEditor(
     { requestRender() {}, terminal: { rows: 24 } },
     createThemeStub(),
     { matches: () => false },
   );
 
-  assert.match(editor.render(80).join("\n"), / high /);
+  expect(editor.render(80).join("\n")).toMatch(/ high /);
 });
 
 test("amp user message uses runtime thinking level after resume when session has no thinking entry", () => {
@@ -309,8 +380,7 @@ test("amp user message uses runtime thinking level after resume when session has
 
   ampUserMessageExtension(pi);
 
-  const sessionStart = handlers.get("session_start");
-  assert.ok(sessionStart, "session_start handler should be registered");
+  const sessionStart = expectDefined(handlers.get("session_start"), "session_start handler should be registered");
 
   sessionStart(
     { type: "session_start", reason: "resume" },
@@ -331,7 +401,7 @@ test("amp user message uses runtime thinking level after resume when session has
   );
 
   const message = new UserMessageComponent("hello from amp");
-  assert.match(message.render(48).join("\n"), /\[thinkingHigh\]▌/);
+  expect(message.render(48).join("\n")).toMatch(/\[thinkingHigh\]▌/);
 
   resetUserMessagePatch();
 });
@@ -350,8 +420,7 @@ test("amp editor render stays safe after pi runtime becomes stale", () => {
     | undefined;
 
   const theme = createThemeStub();
-  const sessionStart = handlers.get("session_start");
-  assert.ok(sessionStart, "session_start handler should be registered");
+  const sessionStart = expectDefined(handlers.get("session_start"), "session_start handler should be registered");
 
   sessionStart(
     { type: "session_start", reason: "startup" },
@@ -378,16 +447,16 @@ test("amp editor render stays safe after pi runtime becomes stale", () => {
     } as unknown as ExtensionContext,
   );
 
-  assert.ok(editorFactory, "editor factory should be registered");
+  const createEditor = expectDefined(editorFactory, "editor factory should be registered");
 
-  const editor = editorFactory(
+  const editor = createEditor(
     { requestRender() {}, terminal: { rows: 24 } },
     theme,
     { matches: () => false },
   );
 
-  assert.doesNotThrow(() => editor.render(80));
+  expect(() => editor.render(80)).not.toThrow();
 
   stale = true;
-  assert.doesNotThrow(() => editor.render(80));
+  expect(() => editor.render(80)).not.toThrow();
 });
