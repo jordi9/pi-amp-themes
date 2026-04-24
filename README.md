@@ -2,7 +2,7 @@
 
 Amp-inspired UI suite for [Pi](https://pi.dev): a dark theme, custom editor chrome, and compact tool display bundled as one installable package.
 
-![amp-gruvbox-dark-hard screenshot](screenshots/amp-gruvbox-dark-hard.png)
+![amp-gruvbox-dark-hard screenshot](https://raw.githubusercontent.com/me-frankan/amp-themes/main/screenshots/amp-gruvbox-dark-hard.png)
 
 ## What it includes
 

@@ -64,6 +64,20 @@ function createSessionManager(thinkingLevel = "medium") {
   };
 }
 
+function createSessionManagerWithoutThinking() {
+  return {
+    getEntries() {
+      return [];
+    },
+    getLeafId() {
+      return undefined;
+    },
+    getSessionName() {
+      return undefined;
+    },
+  };
+}
+
 function resetUserMessagePatch(): void {
   const prototype = UserMessageComponent.prototype as unknown as {
     render: UserMessageComponent["render"];
@@ -198,6 +212,88 @@ test("amp editor shows running tools while tool execution is active", () => {
   );
 
   assert.equal(workingMessages.at(-1), "Running tools...");
+});
+
+test("amp editor uses runtime thinking level after resume when session has no thinking entry", () => {
+  const { pi, handlers } = createPiStub(() => "high");
+
+  ampEditorExtension(pi);
+
+  let editorFactory:
+    | ((tui: unknown, theme: ThemeStub, keybindings: { matches(): boolean }) => { render(width: number): string[] })
+    | undefined;
+
+  const sessionStart = handlers.get("session_start");
+  assert.ok(sessionStart, "session_start handler should be registered");
+
+  sessionStart(
+    { type: "session_start", reason: "resume" },
+    {
+      hasUI: true,
+      cwd: process.cwd(),
+      model: {
+        id: "claude-sonnet-4-20250514",
+        contextWindow: 200000,
+        reasoning: true,
+      },
+      modelRegistry: { isUsingOAuth: () => false },
+      sessionManager: createSessionManagerWithoutThinking(),
+      getContextUsage: () => ({ percent: 12, contextWindow: 200000 }),
+      ui: {
+        theme: createThemeStub(),
+        setEditorComponent(factory: typeof editorFactory) {
+          editorFactory = factory;
+        },
+        setWorkingIndicator() {},
+        setWorkingMessage() {},
+        setFooter() {},
+      },
+    } as unknown as ExtensionContext,
+  );
+
+  assert.ok(editorFactory, "editor factory should be registered");
+
+  const editor = editorFactory(
+    { requestRender() {}, terminal: { rows: 24 } },
+    createThemeStub(),
+    { matches: () => false },
+  );
+
+  assert.match(editor.render(80).join("\n"), / high /);
+});
+
+test("amp user message uses runtime thinking level after resume when session has no thinking entry", () => {
+  resetUserMessagePatch();
+
+  const { pi, handlers } = createPiStub(() => "high");
+
+  ampUserMessageExtension(pi);
+
+  const sessionStart = handlers.get("session_start");
+  assert.ok(sessionStart, "session_start handler should be registered");
+
+  sessionStart(
+    { type: "session_start", reason: "resume" },
+    {
+      hasUI: true,
+      sessionManager: createSessionManagerWithoutThinking(),
+      ui: {
+        theme: {
+          fg(color: string, text: string) {
+            return `[${color}]${text}`;
+          },
+          italic(text: string) {
+            return text;
+          },
+        },
+      },
+    } as unknown as ExtensionContext,
+  );
+
+  const message = new UserMessageComponent("hello from amp");
+  assert.match(message.render(48).join("\n"), /\[thinkingHigh\]▌/);
+
+  resetUserMessagePatch();
 });
 
 test("amp editor render stays safe after pi runtime becomes stale", () => {

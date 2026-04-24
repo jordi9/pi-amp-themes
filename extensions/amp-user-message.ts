@@ -69,6 +69,18 @@ function getThinkingLevelFromSession(sessionManager: SessionManagerLike): string
   return buildSessionContext(sessionManager.getEntries(), sessionManager.getLeafId()).thinkingLevel || "off";
 }
 
+function getSafeThinkingLevel(pi: ExtensionAPI, sessionManager: SessionManagerLike): string {
+  try {
+    return pi.getThinkingLevel();
+  } catch {
+    try {
+      return getThinkingLevelFromSession(sessionManager);
+    } catch {
+      return "off";
+    }
+  }
+}
+
 function styledUserLine(line: string, width: number, theme: ThemeLike | undefined, color: ThemeColor): string {
   const prefix = theme ? theme.fg(color, "▌") : "▌";
   const contentWidth = Math.max(1, width - visibleWidth(prefix));
@@ -126,12 +138,12 @@ export default function (pi: ExtensionAPI) {
   pi.on("session_start", (_event, ctx) => {
     if (!ctx.hasUI) return;
     activeTheme = ctx.ui.theme;
-    activeThinkingLevel = getThinkingLevelFromSession(ctx.sessionManager);
+    activeThinkingLevel = getSafeThinkingLevel(pi, ctx.sessionManager);
     patchUserMessageRender(getTheme, getThinkingLevel);
   });
 
   pi.on("before_agent_start", (_event, ctx) => {
-    activeThinkingLevel = getThinkingLevelFromSession(ctx.sessionManager);
+    activeThinkingLevel = getSafeThinkingLevel(pi, ctx.sessionManager);
     patchUserMessageRender(getTheme, getThinkingLevel);
   });
 }

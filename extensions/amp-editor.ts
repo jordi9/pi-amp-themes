@@ -147,6 +147,18 @@ function getThinkingLevel(sessionManager: SessionManagerLike): string {
   return buildSessionContext(sessionManager.getEntries(), sessionManager.getLeafId()).thinkingLevel || "off";
 }
 
+function getSafeThinkingLevel(pi: ExtensionAPI, sessionManager: SessionManagerLike): string {
+  try {
+    return pi.getThinkingLevel();
+  } catch {
+    try {
+      return getThinkingLevel(sessionManager);
+    } catch {
+      return "off";
+    }
+  }
+}
+
 class AmpEditor extends CustomEditor {
   constructor(
     tui: any,
@@ -299,14 +311,15 @@ class AmpEditor extends CustomEditor {
 
 export default function (pi: ExtensionAPI) {
   const activeToolExecutions = new Set<string>();
+  let activeThinkingLevel = "off";
 
   pi.on("session_start", (_event, ctx) => {
     if (!ctx.hasUI) return;
 
+    activeThinkingLevel = getSafeThinkingLevel(pi, ctx.sessionManager);
+
     ctx.ui.setEditorComponent((tui, theme, keybindings) =>
-      new AmpEditor(tui, theme, keybindings, ctx, () =>
-        getThinkingLevel(ctx.sessionManager),
-      ),
+      new AmpEditor(tui, theme, keybindings, ctx, () => activeThinkingLevel),
     );
 
     ctx.ui.setWorkingIndicator({
@@ -324,6 +337,7 @@ export default function (pi: ExtensionAPI) {
   });
 
   pi.on("before_agent_start", (_event, ctx) => {
+    activeThinkingLevel = getSafeThinkingLevel(pi, ctx.sessionManager);
     if (!ctx.hasUI) return;
     activeToolExecutions.clear();
     ctx.ui.setWorkingMessage("Waiting for response...");
