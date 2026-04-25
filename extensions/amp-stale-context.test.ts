@@ -326,6 +326,54 @@ test("amp editor uses latest context and cost after reload", () => {
   expect(editor.render(100).join("\n")).toMatch(/72% of 272k · \$16\.37 \(sub\)/);
 });
 
+test("amp editor border follows the runtime border color function", () => {
+  const { pi, handlers } = createPiStub(() => "medium");
+
+  ampEditorExtension(pi);
+
+  let editorFactory:
+    | ((tui: unknown, theme: ThemeStub, keybindings: { matches(): boolean }) => { render(width: number): string[]; borderColor?: (text: string) => string })
+    | undefined;
+
+  const sessionStart = expectDefined(handlers.get("session_start"), "session_start handler should be registered");
+
+  sessionStart(
+    { type: "session_start", reason: "startup" },
+    {
+      hasUI: true,
+      cwd: process.cwd(),
+      model: {
+        id: "claude-sonnet-4-20250514",
+        contextWindow: 200000,
+        reasoning: true,
+      },
+      modelRegistry: { isUsingOAuth: () => false },
+      sessionManager: createSessionManager(),
+      getContextUsage: () => ({ percent: 12, contextWindow: 200000 }),
+      ui: {
+        theme: createThemeStub(),
+        setEditorComponent(factory: typeof editorFactory) {
+          editorFactory = factory;
+        },
+        setWorkingIndicator() {},
+        setWorkingMessage() {},
+        setFooter() {},
+      },
+    } as unknown as ExtensionContext,
+  );
+
+  const createEditor = expectDefined(editorFactory, "editor factory should be registered");
+  const editor = createEditor(
+    { requestRender() {}, terminal: { rows: 24 } },
+    createThemeStub(),
+    { matches: () => false },
+  );
+
+  editor.borderColor = (text: string) => `[border]${text}`;
+
+  expect(editor.render(80).join("\n")).toContain("[border]╭");
+});
+
 test("amp editor uses runtime thinking level after resume when session has no thinking entry", () => {
   const { pi, handlers } = createPiStub(() => "high");
 

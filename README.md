@@ -1,6 +1,6 @@
 # amp-themes
 
-[Amp](https://ampcode.com)-inspired UI for [Pi](https://pi.dev): a Gruvbox dark theme, rounded editor chrome, compact user messages, and bundled compact tool rendering.
+[Amp](https://ampcode.com)-inspired UI for [Pi](https://pi.dev): Amp dark/light themes, a Gruvbox dark theme, rounded editor chrome, compact user messages, and bundled compact tool rendering.
 
 ![amp-gruvbox-dark-hard screenshot](https://raw.githubusercontent.com/me-frankan/amp-themes/main/screenshots/amp-gruvbox-dark-hard.png)
 
@@ -14,7 +14,7 @@ Set the theme in Pi settings, or in `~/.pi/agent/settings.json`:
 
 ```json
 {
-  "theme": "amp-gruvbox-dark-hard"
+  "theme": "amp-dark"
 }
 ```
 
@@ -22,7 +22,7 @@ If `npm:pi-tool-display` is installed separately, remove it. `amp-themes` alread
 
 ## Includes
 
-- `amp-gruvbox-dark-hard` theme
+- `amp-dark`, `amp-light`, and `amp-gruvbox-dark-hard` themes
 - Amp-style editor chrome with context, cost, model, thinking level, cwd, branch, and git change summary
 - Compact Amp-style user messages
 - Amp-style working indicator/status messages

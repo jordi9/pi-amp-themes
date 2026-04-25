@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.8
+
+- Add `amp-dark` and `amp-light` themes based on Amp's dark/light palette.
+- Fix Amp editor borders so thinking-level color changes apply when cycling thinking levels.
+- Validate bundled theme files include every required Pi theme color token.
+
 ## 0.2.7
 
 - Refresh editor context and cost stats after `/reload` by reading the latest extension context.

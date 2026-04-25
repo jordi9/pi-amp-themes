@@ -296,20 +296,18 @@ class AmpEditor extends CustomEditor {
     const right = truncateToWidth(rightLabel, maxRight, "…");
     const used = visibleWidth(left) + visibleWidth(right);
     const fill = Math.max(0, innerWidth - used);
-    const borderColor = this.getThinkingColor();
-    return this.fg(borderColor, "╭") + left + this.fg(borderColor, "─".repeat(fill)) + right + this.fg(borderColor, "╮");
+    return this.borderColor("╭") + left + this.borderColor("─".repeat(fill)) + right + this.borderColor("╮");
   }
 
   private sideBorder(): string {
-    return this.fg(this.getThinkingColor(), "│");
+    return this.borderColor("│");
   }
 
   private borderWithRightLabel(width: number, label: string): string {
     const innerWidth = Math.max(0, width - 2);
     const right = this.fg("muted", truncateToWidth(label, Math.max(0, innerWidth - 2), "…"));
     const fill = Math.max(0, innerWidth - visibleWidth(right));
-    const borderColor = this.getThinkingColor();
-    return this.fg(borderColor, "╰") + this.fg(borderColor, "─".repeat(fill)) + right + this.fg(borderColor, "╯");
+    return this.borderColor("╰") + this.borderColor("─".repeat(fill)) + right + this.borderColor("╯");
   }
 }
 
@@ -325,7 +323,11 @@ export default function (pi: ExtensionAPI) {
     activeThinkingLevel = getSafeThinkingLevel(pi, ctx.sessionManager);
 
     ctx.ui.setEditorComponent((tui, theme, keybindings) =>
-      new AmpEditor(tui, theme, keybindings, () => activeCtx ?? ctx, () => activeThinkingLevel),
+      new AmpEditor(tui, theme, keybindings, () => activeCtx ?? ctx, () => {
+        const currentCtx = activeCtx ?? ctx;
+        activeThinkingLevel = getSafeThinkingLevel(pi, currentCtx.sessionManager);
+        return activeThinkingLevel;
+      }),
     );
 
     ctx.ui.setWorkingIndicator({
