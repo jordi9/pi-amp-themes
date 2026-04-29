@@ -175,7 +175,7 @@ class AmpEditor extends CustomEditor {
     private readonly getCtx: () => ExtensionContext,
     private readonly getThinkingLevel: () => string,
     private readonly getWorkingState: () => WorkingState,
-    private readonly openCommandPalette: (initialQuery: string | undefined, onSelect: (command: string) => void) => void,
+    private readonly openCommandPalette: (initialQuery: string | undefined, onSelect: (result: CommandPaletteResult) => void) => void,
   ) {
     super(tui, theme, keybindings, { paddingX: 1 });
   }
@@ -186,13 +186,22 @@ class AmpEditor extends CustomEditor {
 
   handleInput(data: string): void {
     if (data === "/" && this.getText().trim() === "") {
-      this.openCommandPalette(undefined, (command) => {
-        this.submitCommand(command);
+      this.openCommandPalette(undefined, (result) => {
+        if (result.action === "insert") {
+          this.insertCommand(result.command);
+        } else {
+          this.submitCommand(result.command);
+        }
       });
       return;
     }
 
     super.handleInput(data);
+  }
+
+  private insertCommand(command: string): void {
+    this.setText(`/${command} `);
+    this.tui.requestRender();
   }
 
   private submitCommand(command: string): void {
@@ -401,7 +410,7 @@ export default function (pi: ExtensionAPI) {
     requestRender();
   };
 
-  const openCommandPalette = (initialQuery = "", onSelect: (command: string) => void) => {
+  const openCommandPalette = (initialQuery = "", onSelect: (result: CommandPaletteResult) => void) => {
     const ctx = activeCtx;
     if (!ctx?.hasUI || commandPaletteOpen) return;
 
@@ -428,7 +437,7 @@ export default function (pi: ExtensionAPI) {
     ).then((result) => {
       commandPaletteOpen = false;
       if (!result) return;
-      onSelect(result.command);
+      onSelect(result);
     }).catch(() => {
       commandPaletteOpen = false;
     });

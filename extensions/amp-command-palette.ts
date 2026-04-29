@@ -5,7 +5,7 @@ const MIN_WIDTH = 40;
 const MAX_ROWS = 14;
 const SIDE_PADDING = 1;
 const TITLE = " Command Palette ";
-const HELP_HINT = " type filter · ↑↓ navigate · enter select · esc close ";
+const HELP_HINT = " type filter · ↑↓ navigate · tab insert · enter run/insert · esc close ";
 
 export interface CommandPaletteItem {
   name: string;
@@ -15,6 +15,7 @@ export interface CommandPaletteItem {
 
 export interface CommandPaletteResult {
   command: string;
+  action: "insert" | "submit";
 }
 
 export const BUILTIN_COMMAND_PALETTE_ITEMS: CommandPaletteItem[] = [
@@ -45,6 +46,10 @@ type StyleText = (color: ThemeColor, text: string) => string;
 
 export function stripAnsi(text: string): string {
   return text.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, "");
+}
+
+function normalizeToSingleLine(text: string): string {
+  return text.replace(/\s+/g, " ").trim();
 }
 
 export class CommandPaletteOverlay implements Component {
@@ -101,9 +106,15 @@ export class CommandPaletteOverlay implements Component {
       return;
     }
 
+    if (this.keybindings.matches(data, "tui.input.tab") || matchesKey(data, Key.tab)) {
+      const selected = filtered[this.selectedIndex];
+      this.done(selected ? { command: selected.name, action: "insert" } : null);
+      return;
+    }
+
     if (this.keybindings.matches(data, "tui.select.confirm")) {
       const selected = filtered[this.selectedIndex];
-      this.done(selected ? { command: selected.name } : null);
+      this.done(selected ? { command: selected.name, action: getDefaultCommandAction(selected) } : null);
       return;
     }
 
@@ -170,7 +181,10 @@ export class CommandPaletteOverlay implements Component {
   private getFilteredItems(): CommandPaletteItem[] {
     const deduped = dedupeItems(this.items);
     if (!this.query.trim()) return deduped;
-    return fuzzyFilter(deduped, this.query, (item) => `${item.name} ${item.description ?? ""} ${item.source ?? ""}`);
+    return fuzzyFilter(deduped, this.query, (item) => [item.name, item.description, item.source]
+      .filter((value): value is string => value !== undefined)
+      .map(normalizeToSingleLine)
+      .join(" "));
   }
 
   private renderInput(width: number): string {
@@ -184,10 +198,13 @@ export class CommandPaletteOverlay implements Component {
     const descriptionWidth = Math.max(0, Math.floor(width * 0.45));
     const nameWidth = Math.max(8, width - sourceWidth - descriptionWidth - 4);
     const marker = selected ? this.fg("accent", "→ ") : "  ";
-    const source = item.source ? this.fg("muted", truncateToWidth(item.source, sourceWidth, "…")) : "";
+    const sourceText = item.source ? normalizeToSingleLine(item.source) : "";
+    const nameText = normalizeToSingleLine(item.name);
+    const descriptionText = item.description ? normalizeToSingleLine(item.description) : "";
+    const source = sourceText ? this.fg("muted", truncateToWidth(sourceText, sourceWidth, "…")) : "";
     const nameColor: ThemeColor = selected ? "accent" : "text";
-    const name = this.fg(nameColor, truncateToWidth(item.name, nameWidth, "…"));
-    const description = item.description ? this.fg(selected ? "text" : "muted", truncateToWidth(item.description, descriptionWidth, "…")) : "";
+    const name = this.fg(nameColor, truncateToWidth(nameText, nameWidth, "…"));
+    const description = descriptionText ? this.fg(selected ? "text" : "muted", truncateToWidth(descriptionText, descriptionWidth, "…")) : "";
     const left = padVisible(`${marker}${source}`, sourceWidth + 2);
     const middle = padVisible(name, nameWidth + 2);
     return truncateToWidth(`${left}${middle}${description}`, width, "", true);
@@ -202,6 +219,10 @@ export class CommandPaletteOverlay implements Component {
   private fg(color: ThemeColor, text: string): string {
     return this.theme.fg(color, text);
   }
+}
+
+function getDefaultCommandAction(item: CommandPaletteItem): CommandPaletteResult["action"] {
+  return item.source === "skill" || item.source === "prompt" ? "insert" : "submit";
 }
 
 function dedupeItems(items: CommandPaletteItem[]): CommandPaletteItem[] {
