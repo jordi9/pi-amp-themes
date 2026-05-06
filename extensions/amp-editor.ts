@@ -1,4 +1,4 @@
-import { buildSessionContext, CustomEditor, type ExtensionAPI, type ExtensionContext, type ThemeColor } from "@mariozechner/pi-coding-agent";
+import { CustomEditor, type ExtensionAPI, type ExtensionContext, type ThemeColor } from "@mariozechner/pi-coding-agent";
 import { truncateToWidth, visibleWidth } from "@mariozechner/pi-tui";
 import { BUILTIN_COMMAND_PALETTE_ITEMS, CommandPaletteOverlay, type CommandPaletteItem, type CommandPaletteResult, stripAnsi } from "./amp-command-palette.js";
 import { execFileSync } from "node:child_process";
@@ -30,8 +30,6 @@ type UsageCost = {
   hasCost: boolean;
   usingSubscription: boolean;
 };
-
-type SessionManagerLike = Pick<ExtensionContext["sessionManager"], "getEntries" | "getLeafId">;
 
 let gitCache: { cwd: string; at: number; info: GitInfo } | undefined;
 
@@ -145,22 +143,6 @@ function getSessionCost(ctx: ExtensionContext): UsageCost {
     : false;
 
   return { total, hasCost, usingSubscription };
-}
-
-function getThinkingLevel(sessionManager: SessionManagerLike): string {
-  return buildSessionContext(sessionManager.getEntries(), sessionManager.getLeafId()).thinkingLevel || "off";
-}
-
-function getSafeThinkingLevel(pi: ExtensionAPI, sessionManager: SessionManagerLike): string {
-  try {
-    return pi.getThinkingLevel();
-  } catch {
-    try {
-      return getThinkingLevel(sessionManager);
-    } catch {
-      return "off";
-    }
-  }
 }
 
 function hideBuiltInWorking(ctx: ExtensionContext): void {
@@ -367,7 +349,7 @@ class AmpEditor extends CustomEditor {
 }
 
 function getCommandPaletteItems(pi: ExtensionAPI): CommandPaletteItem[] {
-  return [
+  const items = [
     ...BUILTIN_COMMAND_PALETTE_ITEMS,
     ...pi.getCommands().map((command) => ({
       name: command.name,
@@ -375,6 +357,12 @@ function getCommandPaletteItems(pi: ExtensionAPI): CommandPaletteItem[] {
       source: command.source,
     })),
   ];
+  const seen = new Set<string>();
+  return items.filter((item) => {
+    if (seen.has(item.name)) return false;
+    seen.add(item.name);
+    return true;
+  });
 }
 
 export default function (pi: ExtensionAPI) {
@@ -447,15 +435,11 @@ export default function (pi: ExtensionAPI) {
     if (!ctx.hasUI) return;
 
     activeCtx = ctx;
-    activeThinkingLevel = getSafeThinkingLevel(pi, ctx.sessionManager);
+    activeThinkingLevel = pi.getThinkingLevel();
 
     ctx.ui.setEditorComponent((tui, theme, keybindings) => {
       activeTui = tui;
-      return new AmpEditor(tui, theme, keybindings, () => activeCtx ?? ctx, () => {
-        const currentCtx = activeCtx ?? ctx;
-        activeThinkingLevel = getSafeThinkingLevel(pi, currentCtx.sessionManager);
-        return activeThinkingLevel;
-      }, () => ({
+      return new AmpEditor(tui, theme, keybindings, () => activeCtx ?? ctx, () => activeThinkingLevel, () => ({
         active: isWorking,
         message: workingMessage,
         frame: WORKING_FRAMES[workingFrameIndex] ?? WORKING_FRAMES[0],
@@ -472,8 +456,13 @@ export default function (pi: ExtensionAPI) {
     }));
   });
 
+  pi.on("thinking_level_select", (event, ctx) => {
+    activeThinkingLevel = event.level;
+    if (ctx.hasUI) requestRender();
+  });
+
   pi.on("before_agent_start", (_event, ctx) => {
-    activeThinkingLevel = getSafeThinkingLevel(pi, ctx.sessionManager);
+    activeThinkingLevel = pi.getThinkingLevel();
     activeToolExecutions.clear();
     isWorking = true;
     workingFrameIndex = 0;

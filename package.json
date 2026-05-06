@@ -1,6 +1,6 @@
 {
   "name": "amp-themes",
-  "version": "0.2.15",
+  "version": "0.2.16",
   "description": "Amp-inspired Pi UI suite: theme, editor chrome, and compact tool display.",
   "keywords": [
     "pi-package",
@@ -52,8 +52,8 @@
     "@mariozechner/pi-tui": "*"
   },
   "devDependencies": {
-    "@mariozechner/pi-coding-agent": "^0.70.2",
-    "@mariozechner/pi-tui": "^0.70.2",
+    "@mariozechner/pi-coding-agent": "^0.73.0",
+    "@mariozechner/pi-tui": "^0.73.0",
     "@types/node": "^24.12.2",
     "typescript": "^5.9.3",
     "vitest": "^4.1.5"

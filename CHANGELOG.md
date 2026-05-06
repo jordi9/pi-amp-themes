@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.16
+
+- Require Pi 0.73 development types and use current thinking-level APIs directly.
+- Update Amp editor and user-message rendering from session-derived thinking fallback to `thinking_level_select` event state.
+- Deduplicate dynamically discovered command-palette entries from Pi command discovery.
+
 ## 0.2.15
 
 - Fix command palette rows for multi-line skill descriptions so text cannot leak outside the overlay.

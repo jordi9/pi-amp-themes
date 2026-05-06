@@ -571,7 +571,7 @@ test("amp editor uses runtime thinking level after resume when session has no th
   expect(editor.render(80).join("\n")).toMatch(/ high /);
 });
 
-test("amp user message follows runtime thinking level changes after session start", () => {
+test("amp user message follows thinking_level_select changes after session start", () => {
   resetUserMessagePatch();
 
   let thinkingLevel = "off";
@@ -600,6 +600,8 @@ test("amp user message follows runtime thinking level changes after session star
   );
 
   thinkingLevel = "medium";
+  const thinkingLevelSelect = expectDefined(handlers.get("thinking_level_select"), "thinking_level_select handler should be registered");
+  thinkingLevelSelect({ level: "medium", previousLevel: "off" }, {} as ExtensionContext);
 
   const message = new UserMessageComponent("hello from amp");
   expect(message.render(48).join("\n")).toMatch(/\[thinkingMedium\]▌/);

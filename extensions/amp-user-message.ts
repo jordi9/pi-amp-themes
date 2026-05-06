@@ -1,9 +1,7 @@
 import {
-  buildSessionContext,
   getMarkdownTheme,
   UserMessageComponent,
   type ExtensionAPI,
-  type ExtensionContext,
   type ThemeColor,
 } from "@mariozechner/pi-coding-agent";
 import { Markdown, truncateToWidth, visibleWidth } from "@mariozechner/pi-tui";
@@ -26,8 +24,6 @@ type ThemeLike = {
   fg(color: ThemeColor, text: string): string;
   italic?(text: string): string;
 };
-
-type SessionManagerLike = Pick<ExtensionContext["sessionManager"], "getEntries" | "getLeafId">;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -64,22 +60,6 @@ function getThinkingColor(level: string): ThemeColor {
     case "off":
     default:
       return "thinkingOff";
-  }
-}
-
-function getThinkingLevelFromSession(sessionManager: SessionManagerLike): string {
-  return buildSessionContext(sessionManager.getEntries(), sessionManager.getLeafId()).thinkingLevel || "off";
-}
-
-function getSafeThinkingLevel(pi: ExtensionAPI, sessionManager: SessionManagerLike): string {
-  try {
-    return pi.getThinkingLevel();
-  } catch {
-    try {
-      return getThinkingLevelFromSession(sessionManager);
-    } catch {
-      return "off";
-    }
   }
 }
 
@@ -134,30 +114,26 @@ function patchUserMessageRender(getTheme: () => ThemeLike | undefined, getThinki
 
 export default function (pi: ExtensionAPI) {
   let activeTheme: ThemeLike | undefined;
-  let activeSessionManager: SessionManagerLike | undefined;
   let activeThinkingLevel = "off";
 
   const getTheme = () => activeTheme;
-  const getThinkingLevel = () => {
-    if (activeSessionManager) {
-      activeThinkingLevel = getSafeThinkingLevel(pi, activeSessionManager);
-    }
-    return activeThinkingLevel;
-  };
+  const getThinkingLevel = () => activeThinkingLevel;
 
   patchUserMessageRender(getTheme, getThinkingLevel);
 
   pi.on("session_start", (_event, ctx) => {
     if (!ctx.hasUI) return;
     activeTheme = ctx.ui.theme;
-    activeSessionManager = ctx.sessionManager;
-    activeThinkingLevel = getSafeThinkingLevel(pi, ctx.sessionManager);
+    activeThinkingLevel = pi.getThinkingLevel();
     patchUserMessageRender(getTheme, getThinkingLevel);
   });
 
-  pi.on("before_agent_start", (_event, ctx) => {
-    activeSessionManager = ctx.sessionManager;
-    activeThinkingLevel = getSafeThinkingLevel(pi, ctx.sessionManager);
+  pi.on("thinking_level_select", (event) => {
+    activeThinkingLevel = event.level;
+  });
+
+  pi.on("before_agent_start", () => {
+    activeThinkingLevel = pi.getThinkingLevel();
     patchUserMessageRender(getTheme, getThinkingLevel);
   });
 }
