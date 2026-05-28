@@ -26,12 +26,6 @@ type GitInfo = {
   removed: number;
 };
 
-type UsageCost = {
-  total: number;
-  hasCost: boolean;
-  usingSubscription: boolean;
-};
-
 let gitCache: { cwd: string; at: number; info: GitInfo } | undefined;
 
 function runGit(cwd: string, args: string[]): string {
@@ -125,27 +119,6 @@ function splitEditorRender(lines: string[]): { editorLines: string[]; popupLines
   };
 }
 
-function getSessionCost(ctx: ExtensionContext): UsageCost {
-  let total = 0;
-  let hasCost = false;
-
-  for (const entry of ctx.sessionManager.getEntries()) {
-    if (entry.type !== "message" || entry.message.role !== "assistant") continue;
-
-    const cost = entry.message.usage?.cost?.total;
-    if (typeof cost !== "number" || !Number.isFinite(cost)) continue;
-
-    total += cost;
-    if (cost > 0) hasCost = true;
-  }
-
-  const usingSubscription = ctx.model
-    ? Boolean((ctx.modelRegistry as { isUsingOAuth?: (model: NonNullable<ExtensionContext["model"]>) => boolean }).isUsingOAuth?.(ctx.model))
-    : false;
-
-  return { total, hasCost, usingSubscription };
-}
-
 function hideBuiltInWorking(ctx: ExtensionContext): void {
   (ctx.ui as typeof ctx.ui & { setWorkingVisible?: (visible: boolean) => void }).setWorkingVisible?.(false);
 }
@@ -231,12 +204,37 @@ class AmpEditor extends CustomEditor {
     const contextWindow = usage?.contextWindow ?? this.ctx.model?.contextWindow ?? null;
     const parts = [` ${pct} of ${formatCount(contextWindow)}`];
 
-    const cost = getSessionCost(this.ctx);
-    if (cost.hasCost || cost.usingSubscription) {
-      parts.push(`${formatCost(cost.total)}${cost.usingSubscription ? " (sub)" : ""}`);
+    if (!this.isSubscription()) {
+      const cost = this.getSessionCost();
+      if (cost.hasCost) {
+        parts.push(`${formatCost(cost.total)}`);
+      }
     }
 
     return `${parts.join(" · ")} `;
+  }
+
+  private isSubscription(): boolean {
+    return this.ctx.model
+      ? Boolean((this.ctx.modelRegistry as { isUsingOAuth?: (model: unknown) => boolean }).isUsingOAuth?.(this.ctx.model))
+      : false;
+  }
+
+  private getSessionCost(): { total: number; hasCost: boolean } {
+    let total = 0;
+    let hasCost = false;
+
+    for (const entry of this.ctx.sessionManager.getEntries()) {
+      if (entry.type !== "message" || entry.message.role !== "assistant") continue;
+
+      const cost = entry.message.usage?.cost?.total;
+      if (typeof cost !== "number" || !Number.isFinite(cost)) continue;
+
+      total += cost;
+      if (cost > 0) hasCost = true;
+    }
+
+    return { total, hasCost };
   }
 
   private getModelLabel(maxWidth: number): string {
