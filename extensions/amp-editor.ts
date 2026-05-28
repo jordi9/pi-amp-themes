@@ -219,7 +219,7 @@ class AmpEditor extends CustomEditor {
     return [
       this.borderWithLabels(width, leftTop, rightTop),
       ...body.map((line) => this.wrapBody(line, innerWidth)),
-      this.borderWithCenterAndRight(width, CENTER_TEXT, cwdLabel),
+      this.borderWithCenterThenPath(width, CENTER_TEXT, cwdLabel),
       ...this.statusRows(width, workingLabel, gitChangesLabel),
       ...this.wrapPopupBlock(popupLines, width),
     ];
@@ -341,22 +341,21 @@ class AmpEditor extends CustomEditor {
     return this.borderColor("│");
   }
 
-  private borderWithCenterAndRight(width: number, centerLabel: string, rightLabel: string): string {
+  private borderWithCenterThenPath(width: number, centerLabel: string, rightLabel: string): string {
     const innerWidth = Math.max(0, width - 2);
-    const right = this.fg("muted", truncateToWidth(rightLabel, Math.max(0, innerWidth - 2), "…"));
+    const centerText = this.fg("text", truncateToWidth(centerLabel, Math.max(0, Math.floor(innerWidth * 0.3)), "…"));
+    const separator = this.fg("dim", " · ");
+    const right = this.fg("muted", truncateToWidth(rightLabel, Math.max(0, innerWidth - visibleWidth(centerText) - visibleWidth(separator) - 2), "…"));
+    const centerWidth = visibleWidth(centerText);
+    const sepWidth = visibleWidth(separator);
     const rightWidth = visibleWidth(right);
-    const center = this.fg("accent", truncateToWidth(centerLabel, Math.max(0, innerWidth - rightWidth - 4), "…"));
-    const centerWidth = visibleWidth(center);
-    const availableWidth = innerWidth - rightWidth;
-    const leftFill = Math.max(0, Math.floor((availableWidth - centerWidth) / 2) - 1);
-    const rightFill = Math.max(0, availableWidth - leftFill - centerWidth - 2);
+    const contentWidth = centerWidth + sepWidth + rightWidth;
+    const fill = Math.max(0, innerWidth - contentWidth);
     return (
       this.borderColor("╰") +
-      this.borderColor("─".repeat(leftFill)) +
-      " " +
-      center +
-      " " +
-      this.borderColor("─".repeat(rightFill)) +
+      this.borderColor("─".repeat(fill)) +
+      centerText +
+      separator +
       right +
       this.borderColor("╯")
     );
