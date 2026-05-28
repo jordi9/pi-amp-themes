@@ -343,18 +343,19 @@ class AmpEditor extends CustomEditor {
 
   private borderWithCenterThenPath(width: number, centerLabel: string, rightLabel: string): string {
     const innerWidth = Math.max(0, width - 2);
-    const centerText = this.fg("mdHeading", truncateToWidth(centerLabel, Math.max(0, Math.floor(innerWidth * 0.3)), "…"));
-    const separator = this.fg("dim", " · ");
-    const right = this.fg("muted", truncateToWidth(rightLabel, Math.max(0, innerWidth - visibleWidth(centerText) - visibleWidth(separator) - 4), "…"));
+    const centerTrunc = truncateToWidth(centerLabel, Math.max(0, Math.floor(innerWidth * 0.3)), "…");
+    const centerText = this.fg("mdHeading", centerTrunc);
     const centerWidth = visibleWidth(centerText);
+    const separator = this.fg("dim", " · ");
     const sepWidth = visibleWidth(separator);
+    const rightAvail = Math.max(0, innerWidth - centerWidth - sepWidth - 2);
+    const right = this.fg("muted", truncateToWidth(rightLabel.trim(), rightAvail, "…"));
     const rightWidth = visibleWidth(right);
     const contentWidth = centerWidth + sepWidth + rightWidth;
     const fill = Math.max(0, innerWidth - contentWidth);
     return (
       this.borderColor("╰") +
       this.borderColor("─".repeat(fill)) +
-      " " +
       centerText +
       separator +
       right +
