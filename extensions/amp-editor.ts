@@ -345,7 +345,7 @@ class AmpEditor extends CustomEditor {
     const innerWidth = Math.max(0, width - 2);
     const right = this.fg("muted", truncateToWidth(rightLabel, Math.max(0, innerWidth - 2), "…"));
     const rightWidth = visibleWidth(right);
-    const center = this.fg("text", truncateToWidth(centerLabel, Math.max(0, innerWidth - rightWidth - 4), "…"));
+    const center = this.fg("accent", truncateToWidth(centerLabel, Math.max(0, innerWidth - rightWidth - 4), "…"));
     const centerWidth = visibleWidth(center);
     const availableWidth = innerWidth - rightWidth;
     const leftFill = Math.max(0, Math.floor((availableWidth - centerWidth) / 2) - 1);
