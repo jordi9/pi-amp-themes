@@ -215,9 +215,11 @@ class AmpEditor extends CustomEditor {
   }
 
   private isSubscription(): boolean {
-    return this.ctx.model
-      ? Boolean((this.ctx.modelRegistry as { isUsingOAuth?: (model: unknown) => boolean }).isUsingOAuth?.(this.ctx.model))
-      : false;
+    if (!this.ctx.model) return false;
+    const modelRegistry = this.ctx.modelRegistry as { isUsingOAuth?: (model: unknown) => boolean };
+    if (modelRegistry.isUsingOAuth?.(this.ctx.model)) return true;
+    const modelId = this.ctx.model.id.toLowerCase();
+    return modelId.includes("minimax") || modelId.includes("gemini");
   }
 
   private getSessionCost(): { total: number; hasCost: boolean } {
