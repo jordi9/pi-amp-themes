@@ -352,10 +352,11 @@ class AmpEditor extends CustomEditor {
     const right = this.fg("muted", truncateToWidth(rightLabel.trim(), rightAvail, "…"));
     const rightWidth = visibleWidth(right);
     const contentWidth = centerWidth + sepWidth + rightWidth;
-    const fill = Math.max(0, innerWidth - contentWidth);
+    const fill = Math.max(0, innerWidth - contentWidth - 1);
     return (
       this.borderColor("╰") +
       this.borderColor("─".repeat(fill)) +
+      " " +
       centerText +
       separator +
       right +
