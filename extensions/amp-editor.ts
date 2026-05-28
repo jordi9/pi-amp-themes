@@ -343,24 +343,47 @@ class AmpEditor extends CustomEditor {
 
   private borderWithCenterThenPath(width: number, centerLabel: string, rightLabel: string): string {
     const innerWidth = Math.max(0, width - 2);
+    // Minimum width: ╰ + sp + center(min 14) + sp + ╯ + right (at least 1)
+    const minWidth = 20;
+    if (innerWidth < minWidth) {
+      const right = this.fg("muted", truncateToWidth(rightLabel.trim(), Math.max(0, innerWidth - 2), "…"));
+      const fill = Math.max(0, innerWidth - visibleWidth(right));
+      return this.borderColor("╰") + this.borderColor("─".repeat(fill)) + right + this.borderColor("╯");
+    }
+
     const centerTrunc = truncateToWidth(centerLabel, Math.max(0, Math.floor(innerWidth * 0.3)), "…");
     const centerText = this.fg("mdHeading", centerTrunc);
     const centerWidth = visibleWidth(centerText);
-    const right = this.fg("muted", truncateToWidth(rightLabel.trim(), Math.max(0, innerWidth - centerWidth - 8), "…"));
+
+    // Layout: ╰ + [dashes] + sp + center + sp + [dashes] + sp + right + sp + ╯
+    // Borders (2) + spaces (4) + right (at least 1)
+    const minDashes = 1;
+    const minPadding = 1;
+    const rightMin = 1;
+    const overhead = 2 + 4 + rightMin;
+    const availableForRight = Math.max(rightMin, innerWidth - centerWidth - overhead);
+    const rightText = truncateToWidth(rightLabel.trim(), availableForRight, "…");
+    const right = this.fg("muted", rightText);
     const rightWidth = visibleWidth(right);
-    const contentWidth = centerWidth + rightWidth;
-    const fill = Math.max(0, innerWidth - contentWidth);
-    const dashCount = Math.max(0, Math.floor((fill - 1) / 2) - 1);
-    const dashes = this.borderColor("─".repeat(dashCount));
+
+    const remaining = innerWidth - centerWidth - rightWidth - 4;
+    const totalDashes = Math.max(2, remaining);
+    const leftDashes = Math.floor(totalDashes / 2);
+    const rightDashes = totalDashes - leftDashes;
+
+    const leftD = this.borderColor("─".repeat(leftDashes));
+    const rightD = this.borderColor("─".repeat(rightDashes));
+
     return (
       this.borderColor("╰") +
-      dashes +
+      leftD +
       " " +
       centerText +
       " " +
-      dashes +
+      rightD +
       " " +
       right +
+      " " +
       this.borderColor("╯")
     );
   }
