@@ -10,6 +10,7 @@ const GIT_CACHE_MS = 2000;
 const STATUS_LEFT_INSET = 1;
 const STATUS_RIGHT_INSET = 1;
 const WORKING_FRAMES = ["~", "≈", "≋"];
+const CENTER_TEXT = "I HAD POTENTIAL";
 
 type WorkingState = {
   active: boolean;
@@ -218,7 +219,7 @@ class AmpEditor extends CustomEditor {
     return [
       this.borderWithLabels(width, leftTop, rightTop),
       ...body.map((line) => this.wrapBody(line, innerWidth)),
-      this.borderWithRightLabel(width, cwdLabel),
+      this.borderWithCenterAndRight(width, CENTER_TEXT, cwdLabel),
       ...this.statusRows(width, workingLabel, gitChangesLabel),
       ...this.wrapPopupBlock(popupLines, width),
     ];
@@ -338,6 +339,27 @@ class AmpEditor extends CustomEditor {
 
   private sideBorder(): string {
     return this.borderColor("│");
+  }
+
+  private borderWithCenterAndRight(width: number, centerLabel: string, rightLabel: string): string {
+    const innerWidth = Math.max(0, width - 2);
+    const right = this.fg("muted", truncateToWidth(rightLabel, Math.max(0, innerWidth - 2), "…"));
+    const rightWidth = visibleWidth(right);
+    const center = this.fg("text", truncateToWidth(centerLabel, Math.max(0, innerWidth - rightWidth - 4), "…"));
+    const centerWidth = visibleWidth(center);
+    const availableWidth = innerWidth - rightWidth;
+    const leftFill = Math.max(0, Math.floor((availableWidth - centerWidth) / 2) - 1);
+    const rightFill = Math.max(0, availableWidth - leftFill - centerWidth - 2);
+    return (
+      this.borderColor("╰") +
+      this.borderColor("─".repeat(leftFill)) +
+      " " +
+      center +
+      " " +
+      this.borderColor("─".repeat(rightFill)) +
+      right +
+      this.borderColor("╯")
+    );
   }
 
   private borderWithRightLabel(width: number, label: string): string {
