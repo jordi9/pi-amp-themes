@@ -346,19 +346,20 @@ class AmpEditor extends CustomEditor {
     const centerTrunc = truncateToWidth(centerLabel, Math.max(0, Math.floor(innerWidth * 0.3)), "…");
     const centerText = this.fg("mdHeading", centerTrunc);
     const centerWidth = visibleWidth(centerText);
-    const separator = this.fg("dim", " · ");
-    const sepWidth = visibleWidth(separator);
-    const rightAvail = Math.max(0, innerWidth - centerWidth - sepWidth - 2);
-    const right = this.fg("muted", truncateToWidth(rightLabel.trim(), rightAvail, "…"));
+    const right = this.fg("muted", truncateToWidth(rightLabel.trim(), Math.max(0, innerWidth - centerWidth - 8), "…"));
     const rightWidth = visibleWidth(right);
-    const contentWidth = centerWidth + sepWidth + rightWidth;
-    const fill = Math.max(0, innerWidth - contentWidth - 1);
+    const contentWidth = centerWidth + rightWidth;
+    const fill = Math.max(0, innerWidth - contentWidth);
+    const dashCount = Math.max(0, Math.floor((fill - 1) / 2) - 1);
+    const dashes = this.borderColor("─".repeat(dashCount));
     return (
       this.borderColor("╰") +
-      this.borderColor("─".repeat(fill)) +
+      dashes +
       " " +
       centerText +
-      separator +
+      " " +
+      dashes +
+      " " +
       right +
       this.borderColor("╯")
     );
