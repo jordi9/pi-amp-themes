@@ -11,10 +11,14 @@ type PatchableUserMessagePrototype = {
   render: RenderFn;
   children?: unknown[];
   __ampUserMessageOriginalRender?: RenderFn;
+  __ampUserMessageRender?: RenderFn;
   __ampUserMessagePatched?: boolean;
+  __ampUserMessagePatchOwner?: object;
   __ampUserMessageGetTheme?: () => ThemeLike | undefined;
   __ampUserMessageGetThinkingLevel?: () => string;
 };
+
+const AMP_USER_MESSAGE_PATCH_OWNER = {};
 
 type MarkdownLike = {
   text?: unknown;
@@ -98,18 +102,37 @@ function patchUserMessageRender(getTheme: () => ThemeLike | undefined, getThinki
   prototype.__ampUserMessageGetTheme = getTheme;
   prototype.__ampUserMessageGetThinkingLevel = getThinkingLevel;
 
-  if (prototype.__ampUserMessagePatched) return;
+  const currentRender = prototype.render;
+  const currentAmpRender = prototype.__ampUserMessageRender;
+  const currentIsAmpRender =
+    prototype.__ampUserMessagePatchOwner === AMP_USER_MESSAGE_PATCH_OWNER &&
+    currentRender === currentAmpRender;
 
-  prototype.__ampUserMessageOriginalRender = prototype.render;
-  prototype.render = function renderWithAmpUserMessage(width: number): string[] {
-    const original = prototype.__ampUserMessageOriginalRender ?? prototype.render;
+  if (currentIsAmpRender) return;
+
+  const existingOriginal = prototype.__ampUserMessageOriginalRender;
+  const currentLooksLikeLegacyAmpRender =
+    prototype.__ampUserMessagePatched &&
+    typeof existingOriginal === "function" &&
+    currentRender.name === "renderWithAmpUserMessage";
+
+  if (!currentLooksLikeLegacyAmpRender) {
+    prototype.__ampUserMessageOriginalRender = currentRender;
+  }
+
+  const original = prototype.__ampUserMessageOriginalRender ?? currentRender;
+  const ampRender = function renderWithAmpUserMessage(this: PatchableUserMessagePrototype, width: number): string[] {
     const theme = prototype.__ampUserMessageGetTheme?.();
     const thinkingLevel = prototype.__ampUserMessageGetThinkingLevel?.() ?? "off";
     const color = getThinkingColor(thinkingLevel);
     const ampLines = renderAmpUserMessage(this as PatchableUserMessagePrototype, width, theme, color);
     return ampLines ?? original.call(this, width);
   };
+
+  prototype.render = ampRender;
+  prototype.__ampUserMessageRender = ampRender;
   prototype.__ampUserMessagePatched = true;
+  prototype.__ampUserMessagePatchOwner = AMP_USER_MESSAGE_PATCH_OWNER;
 }
 
 export default function (pi: ExtensionAPI) {

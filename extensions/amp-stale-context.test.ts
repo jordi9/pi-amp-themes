@@ -128,7 +128,9 @@ function resetUserMessagePatch(): void {
   const prototype = UserMessageComponent.prototype as unknown as {
     render: UserMessageComponent["render"];
     __ampUserMessageOriginalRender?: UserMessageComponent["render"];
+    __ampUserMessageRender?: UserMessageComponent["render"];
     __ampUserMessagePatched?: boolean;
+    __ampUserMessagePatchOwner?: object;
     __ampUserMessageGetTheme?: () => unknown;
     __ampUserMessageGetThinkingLevel?: () => string;
   };
@@ -138,7 +140,9 @@ function resetUserMessagePatch(): void {
   }
 
   delete prototype.__ampUserMessageOriginalRender;
+  delete prototype.__ampUserMessageRender;
   delete prototype.__ampUserMessagePatched;
+  delete prototype.__ampUserMessagePatchOwner;
   delete prototype.__ampUserMessageGetTheme;
   delete prototype.__ampUserMessageGetThinkingLevel;
 }
@@ -820,6 +824,51 @@ test("amp user message refreshes prototype state after extension reload", () => 
   const rendered = afterReload.render(48).join("\n");
   expect(rendered).toMatch(/\[second:thinkingHigh\]▌/);
   expect(rendered).not.toMatch(/\[first:thinkingMinimal\]▌/);
+
+  resetUserMessagePatch();
+});
+
+test("amp user message reapplies if another patch replaces render after session replacement", () => {
+  resetUserMessagePatch();
+
+  const first = createPiStub(() => "low");
+  ampUserMessageExtension(first.pi);
+
+  const firstSessionStart = expectDefined(first.handlers.get("session_start"), "first session_start handler should be registered");
+  firstSessionStart(
+    { type: "session_start", reason: "startup" },
+    {
+      hasUI: true,
+      sessionManager: createSessionManagerWithoutThinking(),
+      ui: { theme: createTaggedThemeStub() },
+    } as unknown as ExtensionContext,
+  );
+
+  const prototype = UserMessageComponent.prototype as unknown as {
+    render: UserMessageComponent["render"];
+  };
+  prototype.render = function renderWithNativeUserBorder(): string[] {
+    return ["native user box"];
+  };
+
+  const second = createPiStub(() => "high");
+  ampUserMessageExtension(second.pi);
+
+  const secondSessionStart = expectDefined(second.handlers.get("session_start"), "second session_start handler should be registered");
+  secondSessionStart(
+    { type: "session_start", reason: "new" },
+    {
+      hasUI: true,
+      sessionManager: createSessionManagerWithoutThinking(),
+      ui: { theme: createTaggedThemeStub() },
+    } as unknown as ExtensionContext,
+  );
+
+  const message = new UserMessageComponent("hello from amp");
+  const rendered = message.render(48).join("\n");
+
+  expect(rendered).toMatch(/\[thinkingHigh\]▌/);
+  expect(rendered).not.toContain("native user box");
 
   resetUserMessagePatch();
 });

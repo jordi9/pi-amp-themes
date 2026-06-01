@@ -30,6 +30,7 @@
   },
   "pi": {
     "extensions": [
+      "./extensions/amp-startup.ts",
       "./extensions/amp-editor.ts",
       "./node_modules/pi-tool-display/index.ts",
       "./extensions/amp-user-message.ts"
