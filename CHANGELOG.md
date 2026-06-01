@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Hide Pi's model-scope startup line before the custom Amp/Hermes header.
 - Add a Jordi9 Industries-branded Amp/Hermes startup header with a large ASCII wordmark, current model/thinking/cwd metadata, polished tool/resource summaries, expanded details, compact hints, and hidden default startup listing.
 - Upgrade bundled `pi-tool-display` to 0.4.2, which uses the current `@earendil-works` Pi peer namespace.
 - Show the active prompt elapsed time next to the Amp editor's `Esc to cancel` working hint, then keep the finished elapsed time visible for 7 seconds.

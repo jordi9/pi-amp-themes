@@ -151,11 +151,25 @@ test("amp startup header expands with launch hints", () => {
   expectLinesWithinWidth(expanded, 88);
 });
 
+test("amp startup extension silences built-in startup output during factory load", async () => {
+  const { pi } = createPiStub();
+
+  await ampStartupExtension(pi);
+
+  const settingsManagerUrl = new URL("./core/settings-manager.js", import.meta.resolve("@earendil-works/pi-coding-agent")).href;
+  const module = await import(settingsManagerUrl) as {
+    SettingsManager?: { prototype?: { getQuietStartup?: () => boolean } };
+  };
+  const getQuietStartup = module.SettingsManager?.prototype?.getQuietStartup;
+
+  expect(getQuietStartup?.call({ settings: { quietStartup: false } })).toBe(true);
+});
+
 test("amp startup extension installs the custom header on session start", async () => {
   const { pi, handlers } = createPiStub();
   let headerFactory: ((tui: unknown, theme: ThemeStub) => AmpStartupHeader) | undefined;
 
-  ampStartupExtension(pi);
+  await ampStartupExtension(pi);
 
   const sessionStart = handlers.get("session_start");
   expect(sessionStart).toBeDefined();

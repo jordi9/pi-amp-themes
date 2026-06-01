@@ -647,7 +647,9 @@ export class AmpStartupHeader implements Component {
   }
 }
 
-export default function (pi: ExtensionAPI) {
+export default async function (pi: ExtensionAPI) {
+  await forceQuietStartup();
+
   let activeCtx: ExtensionContext | undefined;
   let activeTheme: ThemeLike | undefined;
   let activeThinkingLevel = "off";
@@ -678,10 +680,8 @@ export default function (pi: ExtensionAPI) {
     return createStartupSnapshot(ctx, theme, activeThinkingLevel, pi.getCommands().length, getStartupResources(pi, ctx));
   };
 
-  pi.on("session_start", async (_event, ctx) => {
+  pi.on("session_start", (_event, ctx) => {
     if (!ctx.hasUI) return;
-
-    await forceQuietStartup();
 
     activeCtx = ctx;
     activeTheme = ctx.ui.theme;
