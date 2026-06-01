@@ -10,12 +10,15 @@ const GIT_CACHE_MS = 2000;
 const STATUS_LEFT_INSET = 1;
 const STATUS_RIGHT_INSET = 1;
 const WORKING_FRAMES = ["~", "≈", "≋"];
+const FINISHED_STATUS_MS = 7000;
 const CENTER_TEXT = "I HAD POTENTIAL";
 
 type WorkingState = {
   active: boolean;
   message: string;
   frame: string;
+  elapsedMs: number | undefined;
+  finishedElapsedMs: number | undefined;
 };
 
 type GitInfo = {
@@ -78,6 +81,17 @@ function formatCost(value: number): string {
   if (value >= 1) return `$${value.toFixed(2)}`;
   if (value >= 0.01) return `$${value.toFixed(3)}`;
   return `$${value.toFixed(4)}`;
+}
+
+function formatElapsed(ms: number): string {
+  const totalSeconds = Math.max(0, Math.floor(ms / 1000));
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+
+  if (hours > 0) return `${hours}h ${minutes}m`;
+  if (minutes > 0) return `${minutes}m ${seconds}s`;
+  return `${seconds}s`;
 }
 
 function compactModelId(modelId: string, maxWidth: number): string {
@@ -274,10 +288,16 @@ class AmpEditor extends CustomEditor {
 
   private getWorkingLabel(): string {
     const working = this.getWorkingState();
-    if (!working.active) return "";
+    if (!working.active) {
+      if (working.finishedElapsedMs === undefined) return "";
+      return `${this.fg("success", "✓")} ${this.fg("text", "Finished")} ${this.fg("muted", "·")} ${this.fg("accent", formatElapsed(working.finishedElapsedMs))}`;
+    }
 
     const cancelHint = `${this.fg("accent", "Esc")}${this.fg("muted", " to cancel")}`;
-    return `${this.fg("accent", working.frame)} ${this.fg("text", working.message)}  ${cancelHint}`;
+    const elapsed = working.elapsedMs === undefined
+      ? ""
+      : `${this.fg("muted", " · ")}${this.fg("accent", formatElapsed(working.elapsedMs))}`;
+    return `${this.fg("accent", working.frame)} ${this.fg("text", working.message)}  ${cancelHint}${elapsed}`;
   }
 
   private getGitChangesLabel(): string {
@@ -316,11 +336,13 @@ class AmpEditor extends CustomEditor {
     if (!leftLabel && !rightLabel) return [];
 
     const contentWidth = Math.max(1, width - STATUS_LEFT_INSET - STATUS_RIGHT_INSET);
-    const maxLeft = Math.max(0, Math.floor(contentWidth * 0.44));
-    const maxRight = Math.max(0, contentWidth - maxLeft - 2);
-    const left = truncateToWidth(leftLabel, maxLeft, "…");
+    const maxRight = rightLabel ? Math.max(0, Math.floor(contentWidth * 0.56)) : 0;
     const right = truncateToWidth(rightLabel, maxRight, "…");
-    const gap = " ".repeat(Math.max(1, contentWidth - visibleWidth(left) - visibleWidth(right)));
+    const rightGap = right ? 2 : 0;
+    const maxLeft = Math.max(0, contentWidth - visibleWidth(right) - rightGap);
+    const left = truncateToWidth(leftLabel, maxLeft, "…");
+    const minGap = left && right ? 2 : 0;
+    const gap = " ".repeat(Math.max(minGap, contentWidth - visibleWidth(left) - visibleWidth(right)));
     const leftPadding = " ".repeat(Math.min(STATUS_LEFT_INSET, Math.max(0, width - contentWidth)));
     const rightPadding = " ".repeat(Math.min(STATUS_RIGHT_INSET, Math.max(0, width - contentWidth - visibleWidth(leftPadding))));
     return [`${leftPadding}${left}${gap}${right}${rightPadding}`];
@@ -422,7 +444,10 @@ export default function (pi: ExtensionAPI) {
   let isWorking = false;
   let workingMessage = "Waiting for response...";
   let workingFrameIndex = 0;
+  let promptStartedAt: number | undefined;
+  let finishedPromptElapsedMs: number | undefined;
   let workingTimer: ReturnType<typeof setInterval> | undefined;
+  let finishedStatusTimer: ReturnType<typeof setTimeout> | undefined;
 
   const requestRender = () => activeTui?.requestRender();
 
@@ -438,6 +463,29 @@ export default function (pi: ExtensionAPI) {
       workingFrameIndex = (workingFrameIndex + 1) % WORKING_FRAMES.length;
       requestRender();
     }, 160);
+  };
+
+  const stopFinishedStatusTimer = () => {
+    if (!finishedStatusTimer) return;
+    clearTimeout(finishedStatusTimer);
+    finishedStatusTimer = undefined;
+  };
+
+  const clearFinishedStatus = () => {
+    stopFinishedStatusTimer();
+    if (finishedPromptElapsedMs === undefined) return;
+    finishedPromptElapsedMs = undefined;
+    requestRender();
+  };
+
+  const startFinishedStatusTimer = () => {
+    stopFinishedStatusTimer();
+    finishedStatusTimer = setTimeout(() => {
+      finishedStatusTimer = undefined;
+      finishedPromptElapsedMs = undefined;
+      requestRender();
+    }, FINISHED_STATUS_MS);
+    finishedStatusTimer.unref?.();
   };
 
   const setWorkingMessage = (message: string, ctx?: ExtensionContext) => {
@@ -491,6 +539,8 @@ export default function (pi: ExtensionAPI) {
         active: isWorking,
         message: workingMessage,
         frame: WORKING_FRAMES[workingFrameIndex] ?? WORKING_FRAMES[0],
+        elapsedMs: promptStartedAt === undefined ? undefined : Date.now() - promptStartedAt,
+        finishedElapsedMs: finishedPromptElapsedMs,
       }), openCommandPalette);
     });
 
@@ -513,6 +563,8 @@ export default function (pi: ExtensionAPI) {
     activeThinkingLevel = pi.getThinkingLevel();
     activeToolExecutions.clear();
     isWorking = true;
+    clearFinishedStatus();
+    promptStartedAt = Date.now();
     workingFrameIndex = 0;
     startWorkingTimer();
     if (!ctx.hasUI) return;
@@ -552,13 +604,19 @@ export default function (pi: ExtensionAPI) {
 
   pi.on("agent_end", (_event, _ctx) => {
     isWorking = false;
+    finishedPromptElapsedMs = promptStartedAt === undefined ? undefined : Date.now() - promptStartedAt;
+    promptStartedAt = undefined;
     activeToolExecutions.clear();
     stopWorkingTimer();
+    if (finishedPromptElapsedMs !== undefined) startFinishedStatusTimer();
     requestRender();
   });
 
   pi.on("session_shutdown", () => {
     stopWorkingTimer();
+    stopFinishedStatusTimer();
+    promptStartedAt = undefined;
+    finishedPromptElapsedMs = undefined;
     activeTui = undefined;
   });
 }

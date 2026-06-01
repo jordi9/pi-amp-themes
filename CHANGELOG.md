@@ -3,6 +3,7 @@
 ## Unreleased
 
 - Upgrade bundled `pi-tool-display` to 0.4.2, which uses the current `@earendil-works` Pi peer namespace.
+- Show the active prompt elapsed time next to the Amp editor's `Esc to cancel` working hint, then keep the finished elapsed time visible for 7 seconds.
 
 ## 0.2.17
 
