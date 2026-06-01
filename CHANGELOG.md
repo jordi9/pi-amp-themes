@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Upgrade bundled `pi-tool-display` to 0.4.2, which uses the current `@earendil-works` Pi peer namespace.
+
 ## 0.2.17
 
 - Move amp-themes extension imports and Pi peer/development dependencies to the new `@earendil-works` package namespace.

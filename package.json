@@ -42,7 +42,7 @@
     ]
   },
   "dependencies": {
-    "pi-tool-display": "^0.3.3"
+    "pi-tool-display": "^0.4.2"
   },
   "bundledDependencies": [
     "pi-tool-display"
