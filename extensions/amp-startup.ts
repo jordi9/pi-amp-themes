@@ -1,28 +1,38 @@
-import { VERSION, type ExtensionAPI, type ExtensionContext, type Theme, type ThemeColor } from "@earendil-works/pi-coding-agent";
+import { VERSION, type BuildSystemPromptOptions, type ExtensionAPI, type ExtensionContext, type Theme, type ThemeColor } from "@earendil-works/pi-coding-agent";
 import { truncateToWidth, visibleWidth, type Component } from "@earendil-works/pi-tui";
-import { existsSync } from "node:fs";
 import { homedir } from "node:os";
-import { basename, dirname, join, relative } from "node:path";
+import { basename, isAbsolute, relative, resolve } from "node:path";
 
-const MAX_HEADER_WIDTH = 88;
+const MAX_HEADER_WIDTH = 122;
 const MIN_FRAMED_WIDTH = 64;
 const BRAND = "JORDI9 INDUSTRIES";
-const MAX_CONTEXT_SEARCH_DEPTH = 8;
+const TAGLINE = "Importer/Exporter of fine software";
 
 const BRAND_WORDMARK = [
-  "     ██╗ ██████╗ ██████╗ ██████╗ ██╗ █████╗ ",
-  "     ██║██╔═══██╗██╔══██╗██╔══██╗██║██╔══██╗",
-  "     ██║██║   ██║██████╔╝██║  ██║██║╚██████║",
-  "██   ██║██║   ██║██╔══██╗██║  ██║██║ ╚═══██║",
-  "╚█████╔╝╚██████╔╝██║  ██║██████╔╝██║ █████╔╝",
-  " ╚════╝  ╚═════╝ ╚═╝  ╚═╝╚═════╝ ╚═╝ ╚════╝ ",
-  "",
-  "██╗███╗   ██╗██████╗ ██╗   ██╗███████╗████████╗██████╗ ██╗███████╗███████╗",
-  "██║████╗  ██║██╔══██╗██║   ██║██╔════╝╚══██╔══╝██╔══██╗██║██╔════╝██╔════╝",
-  "██║██╔██╗ ██║██║  ██║██║   ██║███████╗   ██║   ██████╔╝██║█████╗  ███████╗",
-  "██║██║╚██╗██║██║  ██║██║   ██║╚════██║   ██║   ██╔══██╗██║██╔══╝  ╚════██║",
-  "██║██║ ╚████║██████╔╝╚██████╔╝███████║   ██║   ██║  ██║██║███████╗███████║",
-  "╚═╝╚═╝  ╚═══╝╚═════╝  ╚═════╝ ╚══════╝   ╚═╝   ╚═╝  ╚═╝╚═╝╚══════╝╚══════╝",
+  "     ██╗ ██████╗ ██████╗ ██████╗ ██╗ █████╗   ██╗███╗   ██╗██████╗ ██╗   ██╗███████╗████████╗██████╗ ██╗███████╗███████╗",
+  "     ██║██╔═══██╗██╔══██╗██╔══██╗██║██╔══██╗  ██║████╗  ██║██╔══██╗██║   ██║██╔════╝╚══██╔══╝██╔══██╗██║██╔════╝██╔════╝",
+  "     ██║██║   ██║██████╔╝██║  ██║██║╚██████║  ██║██╔██╗ ██║██║  ██║██║   ██║███████╗   ██║   ██████╔╝██║█████╗  ███████╗",
+  "██   ██║██║   ██║██╔══██╗██║  ██║██║ ╚═══██║  ██║██║╚██╗██║██║  ██║██║   ██║╚════██║   ██║   ██╔══██╗██║██╔══╝  ╚════██║",
+  "╚█████╔╝╚██████╔╝██║  ██║██████╔╝██║ █████╔╝  ██║██║ ╚████║██████╔╝╚██████╔╝███████║   ██║   ██║  ██║██║███████╗███████║",
+  " ╚════╝  ╚═════╝ ╚═╝  ╚═╝╚═════╝ ╚═╝ ╚════╝   ╚═╝╚═╝  ╚═══╝╚═════╝  ╚═════╝ ╚══════╝   ╚═╝   ╚═╝  ╚═╝╚═╝╚══════╝╚══════╝",
+];
+
+const FACTORY_MARK = [
+  "⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿",
+  "⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿",
+  "⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⡇⠀⢸⣿⡇⠀⣿⣿",
+  "⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⡇⠀⢸⣿⡇⠀⣿⣿",
+  "⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⡇⠀⢸⣿⡇⠀⣿⣿",
+  "⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⢿⣿⣿⣿⣿⣿⡇⠀⢸⣿⡇⠀⣿⣿",
+  "⣿⣿⡟⠈⢿⣿⣿⣿⣿⠃⠙⣿⣿⣿⣿⡟⠈⠻⣿⣿⣿⣿⡇⠀⢸⣿⡇⠀⣿⣿",
+  "⣿⣿⡇⠀⠀⠹⣿⣿⣿⠀⠀⠈⢿⣿⣿⡇⠀⠀⠘⣿⣿⣿⡇⠀⢸⣿⡇⠀⣿⣿",
+  "⣿⣿⠁⠀⠀⠀⠈⢿⡟⠀⠀⠀⠀⠹⣿⠃⠀⠀⠀⠈⠻⣿⡇⠀⢸⣿⡇⠀⣿⣿",
+  "⣿⣿⠀⠀⠀⠀⠀⠀⠁⠀⠀⠀⠀⠀⠈⠀⠀⠀⠀⠀⠀⠉⠃⠀⠘⠛⠁⠀⣿⣿",
+  "⣿⣿⠀⢠⣶⣶⡆⠀⢰⣶⣶⡄⠀⣶⣶⣶⠀⠀⣶⣶⡆⠀⠀⠀⠀⠀⠀⠀⣿⣿",
+  "⣿⣿⠀⠈⠉⠉⠁⠀⠈⠉⠉⠁⠀⠉⠉⠉⠀⠀⠉⠉⠁⠀⠀⠀⠀⠀⠀⠀⣿⣿",
+  "⣿⣿⠀⢰⣶⣶⡆⠀⢰⣶⣶⡆⠀⣶⣶⣶⠀⠀⣶⣶⡆⠀⠀⠀⠀⠀⠀⠀⣿⣿",
+  "⣿⣿⠀⠀⠉⠉⠁⠀⠈⠉⠉⠀⠀⠈⠉⠁⠀⠀⠉⠉⠁⠀⠀⠀⠀⠀⠀⠀⣿⣿",
+  "⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿",
 ];
 
 export type StartupSection = {
@@ -41,6 +51,7 @@ export type StartupSnapshot = {
   tools: string[];
   activeTools: string[];
   contextFiles: string[];
+  contextFilesKnown: boolean;
   skills: string[];
   prompts: string[];
   extensionCommands: string[];
@@ -49,7 +60,7 @@ export type StartupSnapshot = {
 };
 
 type StartupResources = Pick<StartupSnapshot,
-  "tools" | "activeTools" | "contextFiles" | "skills" | "prompts" | "extensionCommands" | "themes" | "sections"
+  "tools" | "activeTools" | "contextFiles" | "contextFilesKnown" | "skills" | "prompts" | "extensionCommands" | "themes" | "sections"
 >;
 
 type TuiLike = {
@@ -125,22 +136,6 @@ function safeList<T>(read: () => T[]): T[] {
   } catch {
     return [];
   }
-}
-
-function discoverContextFiles(cwd: string): string[] {
-  const files: string[] = [];
-  let dir = cwd;
-
-  for (let depth = 0; depth < MAX_CONTEXT_SEARCH_DEPTH; depth += 1) {
-    const candidate = join(dir, "AGENTS.md");
-    if (existsSync(candidate)) files.push(compactPath(candidate));
-
-    const parent = dirname(dir);
-    if (parent === dir) break;
-    dir = parent;
-  }
-
-  return uniqueSorted(files, { sort: false });
 }
 
 function commandName(command: CommandLike): string | undefined {
@@ -260,6 +255,13 @@ function commandResourcePath(command: CommandLike, fallback: string): string {
   return sourceInfoPath(command.sourceInfo) ?? fallback;
 }
 
+function commandSourceLabel(sourceInfo: SourceInfoLike | undefined): string | undefined {
+  const path = sourceInfoPath(sourceInfo);
+  if (!path) return undefined;
+  if (isPackageSource(sourceInfo)) return sourceInfoSource(sourceInfo);
+  return formatDisplayPath(path);
+}
+
 function isBuiltInPiThemePath(themePath: string): boolean {
   const normalizedPath = themePath.replace(/\\/g, "/");
   return /\/@earendil-works\/pi-coding-agent\/dist\/(?:modes\/interactive\/theme|theme)\//.test(normalizedPath);
@@ -283,35 +285,91 @@ function buildStartupSections(options: {
   tools: ToolLike[];
   activeTools: string[];
   contextFiles: string[];
+  contextFilesKnown: boolean;
   skillItems: ResourceItem[];
-  promptItems: ResourceItem[];
-  extensionCommands: string[];
+  commandItems: ResourceItem[];
   themeItems: ResourceItem[];
 }): StartupSection[] {
   const sections: StartupSection[] = [];
+  if (options.contextFilesKnown) {
+    sections.push({
+      title: "Context",
+      lines: options.contextFiles.length > 0 ? options.contextFiles.map((file) => `  ${file}`) : ["  none loaded"],
+    });
+  }
+  if (options.skillItems.length > 0) sections.push({ title: "Skills", lines: buildScopeGroupLines(options.skillItems) });
   const toolSection = buildToolSection(options.tools, options.activeTools);
   if (toolSection) sections.push(toolSection);
-  if (options.contextFiles.length > 0) sections.push({ title: "Context", lines: options.contextFiles.map((file) => `  ${file}`) });
-  if (options.skillItems.length > 0) sections.push({ title: "Skills", lines: buildScopeGroupLines(options.skillItems) });
-  if (options.promptItems.length > 0) sections.push({
-    title: "Prompts",
-    lines: buildScopeGroupLines(options.promptItems, (item) => item.label ?? getShortPath(item.path, item.sourceInfo)),
-  });
-  if (options.extensionCommands.length > 0) {
-    sections.push({ title: "Extension commands", lines: options.extensionCommands.map((command) => `  ${command}`) });
+  if (options.commandItems.length > 0) {
+    sections.push({ title: "Commands", lines: buildCommandLines(options.commandItems) });
   }
   if (options.themeItems.length > 0) sections.push({ title: "Themes", lines: buildScopeGroupLines(options.themeItems) });
   return sections;
 }
 
-function getStartupResources(pi: ExtensionAPI, ctx: ExtensionContext): StartupResources {
+function buildCommandLines(items: ResourceItem[]): string[] {
+  const lines = ["  extension commands"];
+  for (const item of [...items].sort((a, b) => (a.label ?? a.path).localeCompare(b.label ?? b.path))) {
+    lines.push(`    ${item.label ?? formatDisplayPath(item.path)}`);
+  }
+  return lines;
+}
+
+function formatContextPath(filePath: string, cwd: string): string {
+  const absolutePath = isAbsolute(filePath) ? resolve(filePath) : resolve(cwd, filePath);
+  const relativePath = relative(resolve(cwd), absolutePath);
+  const isInsideCwd = relativePath === "" || (
+    relativePath !== ".."
+    && !relativePath.startsWith("../")
+    && !relativePath.startsWith("..\\")
+    && !isAbsolute(relativePath)
+  );
+
+  if (isInsideCwd) return (relativePath || ".").replace(/\\/g, "/");
+  return compactPath(absolutePath);
+}
+
+function contextFilesFromSystemPromptOptions(
+  contextFiles: BuildSystemPromptOptions["contextFiles"],
+  cwd: string,
+): string[] {
+  return uniqueSorted((contextFiles ?? []).map((file) => formatContextPath(file.path, cwd)), { sort: false });
+}
+
+function isContextHeadingPath(filePath: string): boolean {
+  const normalized = filePath.replace(/\\/g, "/");
+  return /(?:^|\/)(?:AGENTS|CLAUDE)\.MD$/i.test(normalized);
+}
+
+function contextFilesFromSystemPrompt(systemPrompt: string, cwd: string): string[] | undefined {
+  const start = systemPrompt.indexOf("# Project Context");
+  if (start === -1) return undefined;
+
+  const sectionAndRest = systemPrompt.slice(start);
+  const stopMarkers = ["\n\nThe following skills", "\nCurrent date:"];
+  const stop = stopMarkers
+    .map((marker) => sectionAndRest.indexOf(marker))
+    .filter((index) => index > 0)
+    .sort((a, b) => a - b)[0];
+  const section = stop === undefined ? sectionAndRest : sectionAndRest.slice(0, stop);
+  const files: string[] = [];
+
+  for (const match of section.matchAll(/^##\s+(.+?)\s*$/gm)) {
+    const filePath = match[1]?.trim();
+    if (filePath && isContextHeadingPath(filePath)) files.push(formatContextPath(filePath, cwd));
+  }
+
+  const uniqueFiles = uniqueSorted(files, { sort: false });
+  return uniqueFiles.length > 0 ? uniqueFiles : undefined;
+}
+
+function getStartupResources(pi: ExtensionAPI, ctx: ExtensionContext, contextFiles: string[] | undefined): StartupResources {
   const toolApi = pi as ToolAwareAPI;
   const toolItems = safeList(() => toolApi.getAllTools?.() ?? []);
   const tools = uniqueSorted(toolItems.map((tool) => typeof tool.name === "string" ? tool.name : ""));
   const activeTools = uniqueSorted(safeList(() => toolApi.getActiveTools?.() ?? []));
   const commands = safeList(() => pi.getCommands() as CommandLike[]);
   const themeInfos = safeList(() => ctx.ui.getAllThemes?.() as ThemeInfoLike[] ?? []);
-  const contextFiles = discoverContextFiles(ctx.cwd);
 
   const skillCommands = commands.filter((command) => commandSource(command) === "skill");
   const skillItems = skillCommands.map((command): ResourceItem => {
@@ -329,12 +387,22 @@ function getStartupResources(pi: ExtensionAPI, ctx: ExtensionContext): StartupRe
   });
   const prompts = uniqueSorted(promptItems.map((item) => item.label ?? ""));
 
-  const extensionCommands = uniqueSorted(commands
-    .filter((command) => commandSource(command) === "extension")
-    .map((command) => {
-      const name = commandName(command);
-      return name ? `/${name}` : "";
-    }));
+  const extensionCommandItems = commands.filter((command) => commandSource(command) === "extension");
+  const commandItems = extensionCommandItems.map((command): ResourceItem => {
+    const name = commandName(command) ?? "extension";
+    const label = `/${name}`;
+    const sourceLabel = commandSourceLabel(command.sourceInfo);
+    const path = commandResourcePath(command, label);
+    return {
+      path,
+      sourceInfo: command.sourceInfo,
+      label: sourceLabel ? `${label} — ${sourceLabel}` : label,
+    };
+  });
+  const extensionCommands = uniqueSorted(extensionCommandItems.map((command) => {
+    const name = commandName(command);
+    return name ? `/${name}` : "";
+  }));
 
   const customThemeInfos = themeInfos.filter((themeInfo) => (
     typeof themeInfo.path === "string" && !isBuiltInPiThemePath(themeInfo.path)
@@ -352,7 +420,8 @@ function getStartupResources(pi: ExtensionAPI, ctx: ExtensionContext): StartupRe
   return {
     tools,
     activeTools,
-    contextFiles,
+    contextFiles: contextFiles ?? [],
+    contextFilesKnown: contextFiles !== undefined,
     skills,
     prompts,
     extensionCommands,
@@ -360,10 +429,10 @@ function getStartupResources(pi: ExtensionAPI, ctx: ExtensionContext): StartupRe
     sections: buildStartupSections({
       tools: toolItems,
       activeTools,
-      contextFiles,
+      contextFiles: contextFiles ?? [],
+      contextFilesKnown: contextFiles !== undefined,
       skillItems,
-      promptItems,
-      extensionCommands,
+      commandItems,
       themeItems,
     }),
   };
@@ -374,6 +443,7 @@ function emptyStartupResources(): StartupResources {
     tools: [],
     activeTools: [],
     contextFiles: [],
+    contextFilesKnown: false,
     skills: [],
     prompts: [],
     extensionCommands: [],
@@ -441,32 +511,29 @@ function joinStyled(parts: string[], separator: string, width: number): string {
   return truncateToWidth(joined, Math.max(0, width), "…");
 }
 
-function formatItemList(items: string[], maxItems: number): string {
-  if (items.length === 0) return "none";
-
-  const visible = items.slice(0, maxItems);
-  const remaining = items.length - visible.length;
-  return `${visible.join(", ")}${remaining > 0 ? ` +${remaining}` : ""}`;
-}
-
-function resourceSegment(theme: ThemeLike, label: string, items: string[], maxItems: number): string {
-  return `${theme.fg("accent", label)} ${theme.fg("text", formatItemList(items, maxItems))}`;
-}
-
 function framedLine(theme: ThemeLike, content: string, innerWidth: number): string {
   return `${theme.fg("borderAccent", "│")}${padToWidth(content, innerWidth)}${theme.fg("borderAccent", "│")}`;
 }
 
-function withIndent(lines: string[], totalWidth: number, boxWidth: number): string[] {
-  const indent = " ".repeat(Math.max(0, Math.floor((totalWidth - boxWidth) / 2)));
-  return lines.map((line) => truncateToWidth(indent + line, totalWidth, ""));
+function alignBlockLeft(lines: string[], totalWidth: number): string[] {
+  return lines.map((line) => truncateToWidth(line, totalWidth, ""));
 }
 
-function styleWordmarkLine(theme: ThemeLike, line: string, index: number): string {
-  if (line === "") return line;
-  if (index < 3 || (index >= 7 && index < 10)) return theme.fg("accent", theme.bold(line));
-  if (index === 5 || index === BRAND_WORDMARK.length - 1) return theme.fg("borderMuted", line);
+function plural(count: number, singular: string, pluralLabel = `${singular}s`): string {
+  return `${count} ${count === 1 ? singular : pluralLabel}`;
+}
+
+function styleBrandWordmarkLine(theme: ThemeLike, line: string, index: number): string {
+  if (index <= 1) return theme.fg("accent", theme.bold(line));
+  if (index === BRAND_WORDMARK.length - 1) return theme.fg("borderMuted", line);
   return theme.fg("mdHeading", theme.bold(line));
+}
+
+function styleFactoryLine(theme: ThemeLike, line: string, index: number): string {
+  if (index <= 1 || index === FACTORY_MARK.length - 1) return theme.fg("borderMuted", line);
+  if (index <= 5) return theme.fg("dim", line);
+  if (index <= 9) return theme.fg("accent", line);
+  return theme.fg("mdHeading", line);
 }
 
 export function createStartupSnapshot(
@@ -522,118 +589,285 @@ export class AmpStartupHeader implements Component {
 
   private renderCompact(width: number): string[] {
     const snapshot = this.getSnapshot();
-    const model = compactModelId(snapshot.modelId, Math.max(6, width - 8));
-    const brand = this.theme.fg("accent", `✦ ${BRAND} ✦`);
-    const detail = joinStyled([
-      this.theme.fg("text", model),
-      this.theme.fg(getThinkingColor(snapshot.thinkingLevel), snapshot.thinkingLevel),
-      this.theme.fg("muted", snapshot.project),
-    ], this.theme.fg("dim", " · "), width);
-
-    const tools = snapshot.activeTools.length > 0 ? snapshot.activeTools : snapshot.tools;
-    const tooling = joinStyled([
-      resourceSegment(this.theme, "tools", tools, 4),
-      this.theme.fg("muted", `${snapshot.commandCount} cmds`),
-    ], this.theme.fg("dim", " · "), width);
-
     return [
-      centerToWidth(brand, width),
-      centerToWidth(detail, width),
-      centerToWidth(tooling, width),
+      this.titleRuleLine(BRAND, width),
+      centerToWidth(this.theme.fg("mdHeading", TAGLINE), width),
+      centerToWidth(this.summaryLine(snapshot, width), width),
+      this.theme.fg("borderMuted", "─".repeat(width)),
+      "",
     ];
   }
 
   private renderFramed(width: number): string[] {
     const snapshot = this.getSnapshot();
     const boxWidth = Math.min(width, MAX_HEADER_WIDTH);
+
+    if (!this.expanded) return this.renderCollapsedFramed(snapshot, boxWidth, width);
+
     const innerWidth = Math.max(1, boxWidth - 2);
     const top = `${this.theme.fg("borderAccent", "╭")}${this.theme.fg("borderMuted", "─".repeat(innerWidth))}${this.theme.fg("borderAccent", "╮")}`;
     const bottom = `${this.theme.fg("borderAccent", "╰")}${this.theme.fg("borderMuted", "─".repeat(innerWidth))}${this.theme.fg("borderAccent", "╯")}`;
 
-    const body: string[] = [top];
-    body.push(framedLine(this.theme, "", innerWidth));
+    const body: string[] = [
+      ...this.headingLines(boxWidth),
+      "",
+      top,
+    ];
 
-    for (const [index, line] of BRAND_WORDMARK.entries()) {
-      body.push(framedLine(this.theme, centerToWidth(styleWordmarkLine(this.theme, line, index), innerWidth), innerWidth));
+    for (const line of this.dashboardLines(snapshot, innerWidth)) {
+      body.push(framedLine(this.theme, line, innerWidth));
     }
 
-    body.push(framedLine(this.theme, "", innerWidth));
-    body.push(framedLine(this.theme, centerToWidth(this.metaLine(snapshot, innerWidth), innerWidth), innerWidth));
-    body.push(framedLine(this.theme, centerToWidth(this.toolsLine(snapshot, innerWidth), innerWidth), innerWidth));
-    body.push(framedLine(this.theme, centerToWidth(this.resourcesLine(snapshot, innerWidth), innerWidth), innerWidth));
-    body.push(framedLine(this.theme, centerToWidth(this.hintLine(snapshot, innerWidth), innerWidth), innerWidth));
-
-    if (this.expanded) {
-      body.push(framedLine(this.theme, "", innerWidth));
-      for (const line of this.expandedLines(snapshot, innerWidth)) {
-        body.push(framedLine(this.theme, padToWidth(line, innerWidth), innerWidth));
-      }
-    }
-
-    body.push(framedLine(this.theme, "", innerWidth));
     body.push(bottom);
 
-    return withIndent(body, width, boxWidth);
+    return alignBlockLeft(body, width);
+  }
+
+  private renderCollapsedFramed(snapshot: StartupSnapshot, boxWidth: number, width: number): string[] {
+    const innerWidth = Math.max(1, boxWidth - 2);
+    const contentWidth = Math.max(1, innerWidth - 4);
+    const top = `${this.theme.fg("borderAccent", "╭")}${this.theme.fg("borderMuted", "─".repeat(innerWidth))}${this.theme.fg("borderAccent", "╮")}`;
+    const bottom = `${this.theme.fg("borderAccent", "╰")}${this.theme.fg("borderMuted", "─".repeat(innerWidth))}${this.theme.fg("borderAccent", "╯")}`;
+    const model = compactModelId(snapshot.modelId, Math.max(8, Math.floor(contentWidth * 0.46)));
+    const session = snapshot.sessionName ? `session ${snapshot.sessionName}` : "fresh session";
+
+    const content = [
+      joinStyled([
+        this.theme.fg("text", model),
+        this.theme.fg("mdHeading", snapshot.project),
+      ], this.theme.fg("dim", " • "), contentWidth),
+      this.theme.fg("muted", truncateToWidth(snapshot.cwd, contentWidth, "…")),
+      joinStyled([
+        this.theme.fg(getThinkingColor(snapshot.thinkingLevel), snapshot.thinkingLevel),
+        this.theme.fg("dim", session),
+      ], this.theme.fg("dim", " • "), contentWidth),
+      "",
+      ...this.resourceSummaryLines(snapshot, contentWidth),
+      "",
+      this.hintLine(snapshot, contentWidth),
+    ];
+
+    const body = [
+      ...this.headingLines(boxWidth),
+      centerToWidth(this.theme.fg("mdHeading", TAGLINE), boxWidth),
+      "",
+      top,
+      framedLine(this.theme, "", innerWidth),
+      ...content.map((line) => framedLine(this.theme, `  ${padToWidth(line, contentWidth)}  `, innerWidth)),
+      framedLine(this.theme, "", innerWidth),
+      bottom,
+      "",
+    ];
+
+    return alignBlockLeft(body, width);
+  }
+
+  private titleRuleLine(title: string, width: number): string {
+    const clipped = truncateToWidth(title, Math.max(1, width - 4), "…");
+    const titleText = ` ${clipped} `;
+    const fillWidth = Math.max(0, width - visibleWidth(titleText));
+    const leftWidth = Math.floor(fillWidth / 2);
+    const rightWidth = fillWidth - leftWidth;
+    return `${this.theme.fg("borderMuted", "─".repeat(leftWidth))}${this.theme.fg("accent", this.theme.bold(titleText))}${this.theme.fg("borderMuted", "─".repeat(rightWidth))}`;
+  }
+
+  private headingLines(width: number): string[] {
+    return BRAND_WORDMARK.map((line, index) => truncateToWidth(styleBrandWordmarkLine(this.theme, line, index), width, ""));
+  }
+
+  private dashboardLines(snapshot: StartupSnapshot, innerWidth: number): string[] {
+    const factoryWidth = Math.max(...FACTORY_MARK.map((line) => visibleWidth(line)));
+    if (innerWidth >= factoryWidth + 38) return this.splitDashboardLines(snapshot, innerWidth, factoryWidth);
+    return this.stackedDashboardLines(snapshot, innerWidth);
+  }
+
+  private splitDashboardLines(snapshot: StartupSnapshot, innerWidth: number, factoryWidth: number): string[] {
+    const sidePadding = 2;
+    const gapWidth = 4;
+    const rightWidth = Math.max(1, innerWidth - (sidePadding * 2) - factoryWidth - gapWidth);
+    const leftLines = this.factoryPanelLines(snapshot, factoryWidth);
+    const rightLines = this.infoPanelLines(snapshot, rightWidth);
+    const rowCount = Math.max(leftLines.length, rightLines.length);
+    const lines = [""];
+
+    for (let index = 0; index < rowCount; index += 1) {
+      lines.push(
+        " ".repeat(sidePadding)
+        + padToWidth(leftLines[index] ?? "", factoryWidth)
+        + " ".repeat(gapWidth)
+        + padToWidth(rightLines[index] ?? "", rightWidth)
+        + " ".repeat(sidePadding),
+      );
+    }
+
+    lines.push("");
+    return lines;
+  }
+
+  private stackedDashboardLines(snapshot: StartupSnapshot, innerWidth: number): string[] {
+    const padding = 2;
+    const contentWidth = Math.max(1, innerWidth - (padding * 2));
+    const content = [
+      this.metaLine(snapshot, contentWidth),
+      "",
+      ...this.infoPanelLines(snapshot, contentWidth),
+    ];
+
+    return ["", ...content.map((line) => `${" ".repeat(padding)}${padToWidth(line, contentWidth)}${" ".repeat(padding)}`), ""];
+  }
+
+  private factoryPanelLines(snapshot: StartupSnapshot, width: number): string[] {
+    const modelWidth = Math.max(6, Math.floor(width * 0.62));
+    const model = compactModelId(snapshot.modelId, modelWidth);
+    const session = snapshot.sessionName ? `session ${snapshot.sessionName}` : "fresh session";
+
+    return [
+      ...FACTORY_MARK.map((line, index) => truncateToWidth(styleFactoryLine(this.theme, line, index), width, "")),
+      "",
+      joinStyled([
+        this.theme.fg("text", model),
+        this.theme.fg(getThinkingColor(snapshot.thinkingLevel), snapshot.thinkingLevel),
+      ], this.theme.fg("dim", " · "), width),
+      this.theme.fg("muted", truncateToWidth(snapshot.cwd, width, "…")),
+      this.theme.fg("dim", truncateToWidth(session, width, "…")),
+    ];
+  }
+
+  private infoPanelLines(snapshot: StartupSnapshot, width: number): string[] {
+    const lines = [
+      centerToWidth(this.theme.fg("mdHeading", this.theme.bold(`pi v${VERSION} · ${snapshot.project}`)), width),
+      centerToWidth(this.summaryLine(snapshot, width), width),
+    ];
+
+    const addSection = (sectionLines: string[]) => {
+      lines.push("", ...sectionLines);
+    };
+
+    if (snapshot.contextFilesKnown) addSection(this.contextPanelLines(snapshot, width));
+    addSection(this.skillsPanelLines(snapshot, width));
+    addSection(this.toolsPanelLines(snapshot, width));
+    addSection(this.commandsPanelLines(snapshot, width));
+    if (this.expanded && snapshot.themes.length > 0) addSection(this.themesPanelLines(snapshot, width));
+
+    lines.push("", this.hintLine(snapshot, width));
+    return lines.map((line) => truncateToWidth(line, width, "…"));
+  }
+
+  private resourceSummaryLines(snapshot: StartupSnapshot, width: number): string[] {
+    const tools = snapshot.tools.length > 0 ? snapshot.tools : snapshot.activeTools;
+    const lines: string[] = [];
+    if (snapshot.contextFilesKnown) lines.push(...this.resourceListLines("context", snapshot.contextFiles, width));
+    lines.push(...this.resourceListLines("skills", snapshot.skills, width));
+    lines.push(...this.resourceListLines("tools", tools, width));
+    lines.push(...this.resourceListLines("commands", snapshot.extensionCommands, width));
+    return lines;
+  }
+
+  private contextPanelLines(snapshot: StartupSnapshot, width: number): string[] {
+    const section = this.findSection(snapshot, "Context");
+    return [
+      ...this.resourceListLines("context", snapshot.contextFiles, width),
+      ...(this.expanded ? this.sectionDetailLines(section, width) : []),
+    ];
+  }
+
+  private skillsPanelLines(snapshot: StartupSnapshot, width: number): string[] {
+    const section = this.findSection(snapshot, "Skills");
+    return [
+      ...this.resourceListLines("skills", snapshot.skills, width),
+      ...(this.expanded ? this.sectionDetailLines(section, width) : []),
+    ];
+  }
+
+  private toolsPanelLines(snapshot: StartupSnapshot, width: number): string[] {
+    const tools = snapshot.tools.length > 0 ? snapshot.tools : snapshot.activeTools;
+    const section = this.findSection(snapshot, "Tools");
+    return [
+      ...this.resourceListLines("tools", tools, width),
+      ...(this.expanded ? this.sectionDetailLines(section, width) : []),
+    ];
+  }
+
+  private commandsPanelLines(snapshot: StartupSnapshot, width: number): string[] {
+    const section = this.findSection(snapshot, "Commands");
+    return [
+      ...this.resourceListLines("commands", snapshot.extensionCommands, width),
+      ...(this.expanded ? this.sectionDetailLines(section, width) : []),
+    ];
+  }
+
+  private themesPanelLines(snapshot: StartupSnapshot, width: number): string[] {
+    const section = this.findSection(snapshot, "Themes");
+    return [
+      ...this.resourceListLines("themes", snapshot.themes, width),
+      ...this.sectionDetailLines(section, width),
+    ];
+  }
+
+  private resourceListLines(label: string, items: string[], width: number, countLabel = String(items.length)): string[] {
+    const prefix = `${label} (${countLabel}): `;
+    const styledPrefix = this.theme.fg("muted", prefix);
+    const values = items.length > 0 ? items : ["none"];
+    const lines: string[] = [];
+    let current = styledPrefix;
+    let currentPlain = prefix;
+    const continuation = " ".repeat(visibleWidth(prefix));
+
+    for (let index = 0; index < values.length; index += 1) {
+      const value = values[index] ?? "";
+      const chunk = index === 0 ? value : `, ${value}`;
+      const nextPlain = `${currentPlain}${chunk}`;
+
+      if (visibleWidth(nextPlain) <= width || currentPlain === prefix) {
+        current += this.theme.fg("text", chunk);
+        currentPlain = nextPlain;
+        continue;
+      }
+
+      lines.push(truncateToWidth(current, width, "…"));
+      current = `${continuation}${this.theme.fg("text", value)}`;
+      currentPlain = `${continuation}${value}`;
+    }
+
+    lines.push(truncateToWidth(current, width, "…"));
+    return lines;
+  }
+
+  private findSection(snapshot: StartupSnapshot, title: string): StartupSection | undefined {
+    return snapshot.sections.find((section) => section.title === title);
+  }
+
+  private sectionDetailLines(section: StartupSection | undefined, width: number): string[] {
+    const lines = section?.lines.length ? section.lines : ["  none loaded"];
+    return lines.map((line) => truncateToWidth(this.styleResourceDetailLine(line), width, "…"));
   }
 
   private metaLine(snapshot: StartupSnapshot, width: number): string {
-    const maxModelWidth = Math.max(6, Math.floor(width * 0.32));
-    const maxPathWidth = Math.max(6, Math.floor(width * 0.26));
+    const maxModelWidth = Math.max(6, Math.floor(width * 0.34));
+    const maxPathWidth = Math.max(6, Math.floor(width * 0.34));
     return joinStyled([
-      `${this.theme.fg("muted", "model")} ${this.theme.fg("text", compactModelId(snapshot.modelId, maxModelWidth))}`,
-      `${this.theme.fg("muted", "think")} ${this.theme.fg(getThinkingColor(snapshot.thinkingLevel), snapshot.thinkingLevel)}`,
-      `${this.theme.fg("muted", "cwd")} ${this.theme.fg("text", truncateToWidth(snapshot.cwd, maxPathWidth, "…"))}`,
+      `${this.theme.fg("muted", "model:")} ${this.theme.fg("text", compactModelId(snapshot.modelId, maxModelWidth))}`,
+      `${this.theme.fg("muted", "think:")} ${this.theme.fg(getThinkingColor(snapshot.thinkingLevel), snapshot.thinkingLevel)}`,
+      `${this.theme.fg("muted", "cwd:")} ${this.theme.fg("text", truncateToWidth(snapshot.cwd, maxPathWidth, "…"))}`,
     ], this.theme.fg("dim", " · "), width);
   }
 
-  private toolsLine(snapshot: StartupSnapshot, width: number): string {
-    const active = snapshot.activeTools.length > 0 ? snapshot.activeTools : snapshot.tools;
-    return joinStyled([
-      resourceSegment(this.theme, "tools", active, 6),
-      this.theme.fg("muted", `${snapshot.commandCount} cmds`),
-    ], this.theme.fg("dim", " · "), width);
-  }
-
-  private resourcesLine(snapshot: StartupSnapshot, width: number): string {
-    return joinStyled([
-      resourceSegment(this.theme, "ctx", snapshot.contextFiles, 1),
-      resourceSegment(this.theme, "prompts", snapshot.prompts, 2),
-      resourceSegment(this.theme, "skills", snapshot.skills, 2),
-      resourceSegment(this.theme, "themes", snapshot.themes, 2),
-    ], this.theme.fg("dim", " · "), width);
+  private summaryLine(snapshot: StartupSnapshot, width: number): string {
+    const tools = snapshot.tools.length > 0 ? snapshot.tools : snapshot.activeTools;
+    const parts = [
+      this.theme.fg("text", plural(tools.length, "tool")),
+      this.theme.fg("text", plural(snapshot.skills.length, "skill")),
+      snapshot.contextFilesKnown ? this.theme.fg("text", plural(snapshot.contextFiles.length, "context file")) : "",
+      this.theme.fg("text", plural(snapshot.extensionCommands.length, "command")),
+    ];
+    return joinStyled(parts, this.theme.fg("dim", " · "), width);
   }
 
   private hintLine(snapshot: StartupSnapshot, width: number): string {
     return joinStyled([
-      this.theme.fg("muted", "Ctrl+O expands"),
-      this.theme.fg("dim", `Pi v${VERSION}`),
+      this.theme.fg("muted", this.expanded ? "Ctrl+O collapses" : "Ctrl+O expands"),
+      this.theme.fg("dim", "/ for commands"),
     ], this.theme.fg("dim", " · "), width);
-  }
-
-  private expandedLines(snapshot: StartupSnapshot, width: number): string[] {
-    const themeName = snapshot.themeName ?? "current theme";
-    const session = snapshot.sessionName ? `session ${snapshot.sessionName}` : "fresh session";
-    const detailLine = (label: string, text: string) => (
-      `  ${this.theme.fg("accent", label.padEnd(8))}${this.theme.fg("dim", " :: ")}${this.theme.fg("text", text)}`
-    );
-
-    const lines = [
-      detailLine("ready", `${session} · ${themeName}`),
-      detailLine("flow", "/ for commands · ! for bash · drop files to attach"),
-      detailLine("nav", "Ctrl+P cycles models · Ctrl+L selects · Shift+Tab thinks harder"),
-      "",
-    ];
-
-    for (const section of snapshot.sections) {
-      lines.push(this.theme.fg("mdHeading", `[${section.title}]`));
-      for (const line of section.lines) {
-        lines.push(this.styleResourceDetailLine(line));
-      }
-      lines.push("");
-    }
-
-    if (lines.at(-1) === "") lines.pop();
-    return lines.map((line) => truncateToWidth(line, width, "…"));
   }
 
   private styleResourceDetailLine(line: string): string {
@@ -655,6 +889,8 @@ export default async function (pi: ExtensionAPI) {
   let activeThinkingLevel = "off";
   let activeHeader: AmpStartupHeader | undefined;
   let activeTui: TuiLike | undefined;
+  // Populated only from Pi's canonical systemPromptOptions; never rediscover context files here.
+  let loadedContextFiles: string[] | undefined;
 
   const refreshHeader = () => {
     activeHeader?.invalidate();
@@ -677,10 +913,13 @@ export default async function (pi: ExtensionAPI) {
       };
     }
 
-    return createStartupSnapshot(ctx, theme, activeThinkingLevel, pi.getCommands().length, getStartupResources(pi, ctx));
+    return createStartupSnapshot(ctx, theme, activeThinkingLevel, pi.getCommands().length, getStartupResources(pi, ctx, loadedContextFiles));
   };
 
   pi.on("session_start", (_event, ctx) => {
+    loadedContextFiles = typeof ctx.getSystemPrompt === "function"
+      ? contextFilesFromSystemPrompt(ctx.getSystemPrompt(), ctx.cwd)
+      : undefined;
     if (!ctx.hasUI) return;
 
     activeCtx = ctx;
@@ -693,6 +932,15 @@ export default async function (pi: ExtensionAPI) {
       activeHeader = new AmpStartupHeader(theme, getSnapshot, tui);
       return activeHeader;
     });
+  });
+
+  pi.on("before_agent_start", (event, ctx) => {
+    loadedContextFiles = contextFilesFromSystemPromptOptions(event.systemPromptOptions.contextFiles, ctx.cwd);
+    if (!ctx.hasUI) return;
+
+    activeCtx = ctx;
+    activeTheme = ctx.ui.theme;
+    refreshHeader();
   });
 
   pi.on("thinking_level_select", (event) => {
@@ -712,5 +960,6 @@ export default async function (pi: ExtensionAPI) {
     activeTheme = undefined;
     activeHeader = undefined;
     activeTui = undefined;
+    loadedContextFiles = undefined;
   });
 }

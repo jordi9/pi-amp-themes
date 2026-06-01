@@ -23,7 +23,7 @@ If `npm:pi-tool-display` is installed separately, remove it. `amp-themes` alread
 ## Includes
 
 - `amp-dark`, `amp-light`, and `amp-gruvbox-dark-hard` themes
-- Jordi9 Industries-branded Amp/Hermes startup header with a large ASCII wordmark, polished tool/resource summaries, expanded details, and hidden default startup listing
+- Jordi9 Industries-branded Amp/Hermes startup header with a left-aligned one-line wordmark, factory terminal art, polished tool/resource summaries, expanded details, and hidden default startup listing
 - Amp-style editor chrome with context, cost, model, thinking level, cwd, branch, and git change summary
 - Working status integrated into the editor status row, with elapsed prompt time after `Esc to cancel`, a 7-second finished timer, and git changes kept on the right
 - Compact Amp-style user messages with thinking-level color sync
