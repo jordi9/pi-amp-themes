@@ -223,13 +223,23 @@ test("amp editor working message waits until assistant update before streaming",
 
   const beforeAgentStart = expectDefined(handlers.get("before_agent_start"), "before_agent_start handler should be registered");
   beforeAgentStart({ type: "before_agent_start" }, ctx);
-  expect(workingMessages.at(-1)).toBe("Waiting for response...");
+  expect(workingMessages.at(-1)).toBe("Waiting");
 
   const messageStart = handlers.get("message_start");
   messageStart?.({ type: "message_start", message: { role: "assistant", content: [] } }, ctx);
-  expect(workingMessages.at(-1)).toBe("Waiting for response...");
+  expect(workingMessages.at(-1)).toBe("Waiting");
 
   const messageUpdate = expectDefined(handlers.get("message_update"), "message_update handler should be registered");
+  messageUpdate(
+    {
+      type: "message_update",
+      assistantMessageEvent: { type: "thinking_delta" },
+      message: { role: "assistant", content: [{ type: "thinking", thinking: "hmm" }] },
+    },
+    ctx,
+  );
+  expect(workingMessages.at(-1)).toBe("Thinking");
+
   messageUpdate(
     {
       type: "message_update",
@@ -238,7 +248,7 @@ test("amp editor working message waits until assistant update before streaming",
     },
     ctx,
   );
-  expect(workingMessages.at(-1)).toBe("Streaming response...");
+  expect(workingMessages.at(-1)).toBe("Streaming");
 });
 
 test("amp editor shows running tools while tool execution is active", () => {
@@ -261,7 +271,7 @@ test("amp editor shows running tools while tool execution is active", () => {
     } as unknown as ExtensionContext,
   );
 
-  expect(workingMessages.at(-1)).toBe("Running tools...");
+  expect(workingMessages.at(-1)).toBe("Using tools");
 });
 
 test("amp editor hides Pi's built-in working row during agent start", () => {
@@ -321,21 +331,21 @@ test("amp editor keeps working message ordered while tools are active", () => {
   const toolExecutionStart = expectDefined(handlers.get("tool_execution_start"), "tool_execution_start handler should be registered");
   const toolExecutionEnd = expectDefined(handlers.get("tool_execution_end"), "tool_execution_end handler should be registered");
 
-  messageUpdate({ type: "message_update", message: { role: "assistant", content: [] } }, ctx);
-  expect(workingMessages).toEqual(["Streaming response..."]);
+  messageUpdate({ type: "message_update", assistantMessageEvent: { type: "thinking_delta" }, message: { role: "assistant", content: [] } }, ctx);
+  expect(workingMessages).toEqual(["Thinking"]);
 
   toolExecutionStart({ type: "tool_execution_start", toolCallId: "tool-1", toolName: "read", args: {} }, ctx);
-  expect(workingMessages).toEqual(["Streaming response...", "Running tools..."]);
+  expect(workingMessages).toEqual(["Thinking", "Using tools"]);
 
-  messageUpdate({ type: "message_update", message: { role: "assistant", content: [] } }, ctx);
-  expect(workingMessages).toEqual(["Streaming response...", "Running tools..."]);
+  messageUpdate({ type: "message_update", assistantMessageEvent: { type: "text_delta" }, message: { role: "assistant", content: [] } }, ctx);
+  expect(workingMessages).toEqual(["Thinking", "Using tools"]);
 
   toolExecutionEnd({ type: "tool_execution_end", toolCallId: "tool-1", toolName: "read", result: {}, isError: false }, ctx);
-  expect(workingMessages).toEqual(["Streaming response...", "Running tools...", "Waiting for response..."]);
+  expect(workingMessages).toEqual(["Thinking", "Using tools", "Waiting"]);
 
   const agentEnd = expectDefined(handlers.get("agent_end"), "agent_end handler should be registered");
   agentEnd({ type: "agent_end", messages: [] }, ctx);
-  expect(workingMessages).toEqual(["Streaming response...", "Running tools...", "Waiting for response..."]);
+  expect(workingMessages).toEqual(["Thinking", "Using tools", "Waiting"]);
 });
 
 test("amp editor renders working status with an Esc cancel hint", () => {
