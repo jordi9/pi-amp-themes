@@ -6,7 +6,7 @@ import { basename, isAbsolute, relative, resolve } from "node:path";
 const MAX_HEADER_WIDTH = 122;
 const MIN_FRAMED_WIDTH = 64;
 const BRAND = "JORDI9 INDUSTRIES";
-const TAGLINE = "Importer/Exporter of fine software";
+const TAGLINE = "Importer/Exporter of Fine Software";
 
 const BRAND_WORDMARK = [
   "     ██╗ ██████╗ ██████╗ ██████╗ ██╗ █████╗   ██╗███╗   ██╗██████╗ ██╗   ██╗███████╗████████╗██████╗ ██╗███████╗███████╗",

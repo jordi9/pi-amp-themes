@@ -115,7 +115,7 @@ test("amp startup header renders a polished compact factory dashboard", () => {
   const text = lines.join("\n");
 
   expect(lines[0]).toContain("████");
-  expect(text).toContain("Importer/Exporter of fine software");
+  expect(text).toContain("Importer/Exporter of Fine Software");
   expect(text).not.toContain("⣿⣿⣿⣿");
   expect(text).not.toContain("context (");
   expect(text).toContain("skills (4): git-committer, librarian");
@@ -243,7 +243,7 @@ test("amp startup extension installs the custom header on session start", async 
     const rendered = header.render(88).join("\n");
 
     expect(rendered).toContain("████");
-    expect(rendered).toContain("Importer/Exporter of fine software");
+    expect(rendered).toContain("Importer/Exporter of Fine Software");
     expect(rendered).not.toContain("⣿⣿⣿⣿");
     expect(rendered).not.toContain("context (");
     expect(rendered).toContain("tools (4): bash, edit, read, write");

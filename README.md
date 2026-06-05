@@ -27,6 +27,7 @@ If `npm:pi-tool-display` is installed separately, remove it. `amp-themes` alread
 - Amp-style editor chrome with context, cost, model, thinking level, cwd, branch, and git change summary
 - Working status integrated into the editor status row, with elapsed prompt time after `Esc to cancel`, a 7-second finished timer, and git changes kept on the right
 - Compact Amp-style user messages with thinking-level color sync
+- Display-only assistant Markdown enhancement that turns HTTP endpoint `txt` fences into route tables
 - Bundled `pi-tool-display`
 
 ## Development
