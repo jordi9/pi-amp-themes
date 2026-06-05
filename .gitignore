@@ -2,3 +2,5 @@ node_modules/
 .tmp-test/
 *.tgz
 .DS_Store
+
+NOW.md

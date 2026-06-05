@@ -6,7 +6,7 @@
 - Add `amp-nebula-moon`, a louder Rosé Pine Moon, Tokyo Night Moon, Catppuccin Mocha, and Amp-red hybrid theme.
 - Color the low `dumb` context warning with the theme's yellow heading token instead of the primary accent.
 - Hide Pi's model-scope startup line before the custom Amp/Hermes header.
-- Add a Jordi9 Industries-branded Amp/Hermes startup header with a large ASCII wordmark, current model/thinking/cwd metadata, polished tool/resource summaries, expanded details, compact hints, and hidden default startup listing.
+- Add a jordi9 Industries-branded Amp/Hermes startup header with a large ASCII wordmark, current model/thinking/cwd metadata, polished tool/resource summaries, expanded details, compact hints, and hidden default startup listing.
 - Upgrade bundled `pi-tool-display` to 0.4.2, which uses the current `@earendil-works` Pi peer namespace.
 - Show the active prompt elapsed time next to the Amp editor's `Esc to cancel` working hint, then keep the finished elapsed time visible for 7 seconds.
 - Randomly pick an editor working-status animation per prompt, including the original `~ → ≈ → ≋` Amp wave and new Hermes-inspired spinner styles, with `/working-animation` and argument autocomplete for experimentation.
