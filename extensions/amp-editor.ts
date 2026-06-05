@@ -137,6 +137,10 @@ function hideBuiltInWorking(ctx: ExtensionContext): void {
   (ctx.ui as typeof ctx.ui & { setWorkingVisible?: (visible: boolean) => void }).setWorkingVisible?.(false);
 }
 
+function joinStatusLabels(parts: string[], separator: string): string {
+  return parts.filter(Boolean).join(separator);
+}
+
 class AmpEditor extends CustomEditor {
   constructor(
     tui: any,
@@ -201,13 +205,18 @@ class AmpEditor extends CustomEditor {
     const rightTop = this.getModelLabel(Math.max(8, Math.floor(innerWidth * 0.48)));
     const cwdLabel = this.getCwdLabel();
     const workingLabel = this.getWorkingLabel();
+    const outputExpandedLabel = this.getOutputExpandedLabel();
     const gitChangesLabel = this.getGitChangesLabel();
+    const leftStatusLabel = joinStatusLabels([
+      workingLabel,
+      outputExpandedLabel,
+    ], ` ${this.fg("muted", "·")} `);
 
     return [
       this.borderWithLabels(width, leftTop, rightTop),
       ...body.map((line) => this.wrapBody(line, innerWidth)),
       this.borderWithCenterThenPath(width, CENTER_TEXT, cwdLabel),
-      ...this.statusRows(width, workingLabel, gitChangesLabel),
+      ...this.statusRows(width, leftStatusLabel, gitChangesLabel),
       ...this.wrapPopupBlock(popupLines, width),
     ];
   }
@@ -298,6 +307,20 @@ class AmpEditor extends CustomEditor {
       ? ""
       : `${this.fg("muted", " · ")}${this.fg("accent", formatElapsed(working.elapsedMs))}`;
     return `${this.fg("accent", working.frame)} ${this.fg("text", working.message)}  ${cancelHint}${elapsed}`;
+  }
+
+  private getOutputExpandedLabel(): string {
+    if (!this.isOutputExpanded()) return "";
+
+    return `${this.fg("warning", "output expanded")} ${this.fg("muted", "·")} ${this.fg("accent", "Ctrl+O")} ${this.fg("muted", "to collapse")}`;
+  }
+
+  private isOutputExpanded(): boolean {
+    try {
+      return this.ctx.ui.getToolsExpanded();
+    } catch {
+      return false;
+    }
   }
 
   private getGitChangesLabel(): string {

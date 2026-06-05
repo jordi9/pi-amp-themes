@@ -385,6 +385,52 @@ test("amp editor renders working status with an Esc cancel hint", () => {
   expect(editor.render(200).join("\n")).toContain("[accent]Esc[muted] to cancel");
 });
 
+test("amp editor makes global output expansion visible", () => {
+  const { pi, handlers } = createPiStub(() => "medium");
+
+  ampEditorExtension(pi);
+
+  let editorFactory:
+    | ((tui: unknown, theme: ThemeStub, keybindings: { matches(): boolean }) => { render(width: number): string[] })
+    | undefined;
+
+  const sessionStart = expectDefined(handlers.get("session_start"), "session_start handler should be registered");
+  sessionStart(
+    { type: "session_start", reason: "startup" },
+    {
+      hasUI: true,
+      cwd: "/tmp",
+      model: {
+        id: "claude-sonnet-4-20250514",
+        contextWindow: 200000,
+        reasoning: true,
+      },
+      modelRegistry: { isUsingOAuth: () => false },
+      sessionManager: createSessionManager(),
+      getContextUsage: () => ({ percent: 12, contextWindow: 200000 }),
+      ui: {
+        theme: createThemeStub(),
+        getToolsExpanded: () => true,
+        setEditorComponent(factory: typeof editorFactory) {
+          editorFactory = factory;
+        },
+        setWorkingIndicator() {},
+        setWorkingMessage() {},
+        setFooter() {},
+      },
+    } as unknown as ExtensionContext,
+  );
+
+  const createEditor = expectDefined(editorFactory, "editor factory should be registered");
+  const editor = createEditor(
+    { requestRender() {}, terminal: { rows: 24 } },
+    createThemeStub(),
+    { matches: () => false },
+  );
+
+  expect(editor.render(200).join("\n")).toContain("output expanded · Ctrl+O to collapse");
+});
+
 test("amp editor renders prompt elapsed time after the Esc cancel hint", () => {
   const now = vi.spyOn(Date, "now").mockReturnValue(1_000);
   const { pi, handlers } = createPiStub(() => "medium");
