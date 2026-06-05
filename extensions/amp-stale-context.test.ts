@@ -644,7 +644,122 @@ test("amp editor uses latest context and cost after reload", () => {
 
   sessionStart({ type: "session_start", reason: "reload" }, createCtx(72, 16.37));
 
-  expect(editor.render(100).join("\n")).toMatch(/72% of 272k · \$16\.37/);
+  expect(editor.render(100).join("\n")).toMatch(/72% of 272k · dumber · \$16\.37/);
+});
+
+test("amp editor labels high context usage as progressively dumber", () => {
+  const { pi, handlers } = createPiStub(() => "medium");
+  let percent = 50;
+
+  ampEditorExtension(pi);
+
+  let editorFactory:
+    | ((tui: unknown, theme: ThemeStub, keybindings: { matches(): boolean }) => { render(width: number): string[] })
+    | undefined;
+
+  const sessionStart = expectDefined(handlers.get("session_start"), "session_start handler should be registered");
+
+  sessionStart(
+    { type: "session_start", reason: "startup" },
+    {
+      hasUI: true,
+      cwd: process.cwd(),
+      model: {
+        id: "claude-sonnet-4-20250514",
+        contextWindow: 200000,
+        reasoning: true,
+      },
+      modelRegistry: { isUsingOAuth: () => false },
+      sessionManager: createSessionManager(),
+      getContextUsage: () => ({ percent, contextWindow: 200000 }),
+      ui: {
+        theme: createThemeStub(),
+        setEditorComponent(factory: typeof editorFactory) {
+          editorFactory = factory;
+        },
+        setWorkingIndicator() {},
+        setWorkingMessage() {},
+        setFooter() {},
+      },
+    } as unknown as ExtensionContext,
+  );
+
+  const createEditor = expectDefined(editorFactory, "editor factory should be registered");
+  const editor = createEditor(
+    { requestRender() {}, terminal: { rows: 24 } },
+    createThemeStub(),
+    { matches: () => false },
+  );
+  const render = () => editor.render(120).join("\n");
+
+  expect(render()).toContain("50% of 200k");
+  expect(render()).not.toContain("dumb");
+
+  percent = 51;
+  expect(render()).toContain("51% of 200k · dumb");
+  expect(render()).not.toContain("dumber");
+  expect(render()).not.toContain("dumbest");
+
+  percent = 71;
+  expect(render()).toContain("71% of 200k · dumber");
+  expect(render()).not.toContain("dumbest");
+
+  percent = 86;
+  expect(render()).toContain("86% of 200k · dumbest");
+});
+
+test("amp editor colors high context labels by severity", () => {
+  const { pi, handlers } = createPiStub(() => "medium");
+  let percent = 51;
+
+  ampEditorExtension(pi);
+
+  let editorFactory:
+    | ((tui: unknown, theme: ThemeStub, keybindings: { matches(): boolean }) => { render(width: number): string[] })
+    | undefined;
+
+  const sessionStart = expectDefined(handlers.get("session_start"), "session_start handler should be registered");
+
+  sessionStart(
+    { type: "session_start", reason: "startup" },
+    {
+      hasUI: true,
+      cwd: process.cwd(),
+      model: {
+        id: "claude-sonnet-4-20250514",
+        contextWindow: 200000,
+        reasoning: true,
+      },
+      modelRegistry: { isUsingOAuth: () => false },
+      sessionManager: createSessionManager(),
+      getContextUsage: () => ({ percent, contextWindow: 200000 }),
+      ui: {
+        theme: createTaggedThemeStub(),
+        setEditorComponent(factory: typeof editorFactory) {
+          editorFactory = factory;
+        },
+        setWorkingIndicator() {},
+        setWorkingMessage() {},
+        setFooter() {},
+      },
+    } as unknown as ExtensionContext,
+  );
+
+  const createEditor = expectDefined(editorFactory, "editor factory should be registered");
+  const editor = createEditor(
+    { requestRender() {}, terminal: { rows: 24 } },
+    createTaggedThemeStub(),
+    { matches: () => false },
+  );
+  const render = () => editor.render(240).join("\n");
+
+  expect(render()).toContain("[accent]dumb");
+
+  percent = 71;
+  expect(render()).toContain("[warning]dumber");
+
+  percent = 86;
+  expect(render()).toContain("[error]dumbest");
 });
 
 test("amp editor border follows the runtime border color function", () => {

@@ -83,6 +83,14 @@ function formatCost(value: number): string {
   return `$${value.toFixed(4)}`;
 }
 
+function getContextWarning(percent: number | null | undefined): { label: string; color: ThemeColor } | undefined {
+  if (typeof percent !== "number" || !Number.isFinite(percent)) return undefined;
+  if (percent > 85) return { label: "dumbest", color: "error" };
+  if (percent > 70) return { label: "dumber", color: "warning" };
+  if (percent > 50) return { label: "dumb", color: "accent" };
+  return undefined;
+}
+
 function formatElapsed(ms: number): string {
   const totalSeconds = Math.max(0, Math.floor(ms / 1000));
   const hours = Math.floor(totalSeconds / 3600);
@@ -225,16 +233,21 @@ class AmpEditor extends CustomEditor {
     const usage = this.ctx.getContextUsage();
     const pct = usage?.percent == null ? "?" : `${Math.max(0, Math.floor(usage.percent))}%`;
     const contextWindow = usage?.contextWindow ?? this.ctx.model?.contextWindow ?? null;
-    const parts = [` ${pct} of ${formatCount(contextWindow)}`];
+    const parts = [this.fg("muted", ` ${pct} of ${formatCount(contextWindow)}`)];
+    const warning = getContextWarning(usage?.percent);
+
+    if (warning) {
+      parts.push(this.fg(warning.color, warning.label));
+    }
 
     if (!this.isSubscription()) {
       const cost = this.getSessionCost();
       if (cost.hasCost) {
-        parts.push(`${formatCost(cost.total)}`);
+        parts.push(this.fg("muted", formatCost(cost.total)));
       }
     }
 
-    return `${parts.join(" · ")} `;
+    return `${parts.join(this.fg("muted", " · "))} `;
   }
 
   private isSubscription(): boolean {
@@ -375,7 +388,7 @@ class AmpEditor extends CustomEditor {
     const innerWidth = Math.max(0, width - 2);
     const maxLeft = Math.max(0, Math.floor(innerWidth * 0.44));
     const maxRight = Math.max(0, innerWidth - maxLeft - 2);
-    const left = this.fg("muted", truncateToWidth(leftLabel, maxLeft, "…"));
+    const left = truncateToWidth(leftLabel, maxLeft, "…");
     const right = truncateToWidth(rightLabel, maxRight, "…");
     const used = visibleWidth(left) + visibleWidth(right);
     const fill = Math.max(0, innerWidth - used);
