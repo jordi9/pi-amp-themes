@@ -62,6 +62,7 @@ function createAmpEditor(paletteResult: CommandPaletteResult): AmpEditorLike {
     },
     getThinkingLevel: () => "medium",
     getCommands: () => [],
+    registerCommand() {},
   };
 
   ampEditorExtension(pi as never);

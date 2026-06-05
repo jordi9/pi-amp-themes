@@ -24,7 +24,9 @@ function createPiStub(getThinkingLevel: () => string) {
     on(event: string, handler: EventHandler) {
       handlers.set(event, handler);
     },
+    getCommands: () => [],
     getThinkingLevel,
+    registerCommand() {},
   } as unknown as ExtensionAPI;
 
   return { pi, handlers };

@@ -1,5 +1,5 @@
 import { CustomEditor, type ExtensionAPI, type ExtensionContext, type ThemeColor } from "@earendil-works/pi-coding-agent";
-import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
+import { truncateToWidth, visibleWidth, type AutocompleteItem } from "@earendil-works/pi-tui";
 import { BUILTIN_COMMAND_PALETTE_ITEMS, CommandPaletteOverlay, type CommandPaletteItem, type CommandPaletteResult, stripAnsi } from "./amp-command-palette.js";
 import { execFileSync } from "node:child_process";
 import { homedir } from "node:os";
@@ -9,12 +9,35 @@ const MIN_BODY_LINES = 2;
 const GIT_CACHE_MS = 2000;
 const STATUS_LEFT_INSET = 1;
 const STATUS_RIGHT_INSET = 1;
-const WORKING_FRAMES = ["~", "≈", "≋"];
+export type WorkingAnimation = {
+  name: string;
+  frames: readonly string[];
+  intervalMs: number;
+};
+
 const WORKING_WAITING = "Waiting";
 const WORKING_THINKING = "Thinking";
 const WORKING_STREAMING = "Streaming";
 const WORKING_TOOLS = "Using tools";
 const FINISHED_STATUS_MS = 7000;
+
+// Compact, single-line animations for the editor status row. Inspired by
+// Hermes' grab-bag of spinners while keeping most frames narrow enough that
+// `Esc to cancel` and elapsed time still fit beside the terse phase labels.
+export const WORKING_ANIMATIONS = [
+  { name: "amp-wave", frames: ["~", "≈", "≋"], intervalMs: 160 },
+  { name: "braille", frames: ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"], intervalMs: 100 },
+  { name: "bounce", frames: ["⠁", "⠂", "⠄", "⡀", "⢀", "⠠", "⠐", "⠈"], intervalMs: 120 },
+  { name: "grow", frames: ["▁", "▂", "▃", "▄", "▅", "▆", "▇", "█", "▇", "▆", "▅", "▄", "▃", "▂"], intervalMs: 90 },
+  { name: "arrows", frames: ["←", "↖", "↑", "↗", "→", "↘", "↓", "↙"], intervalMs: 110 },
+  { name: "orbit", frames: ["◜", "◠", "◝", "◞", "◡", "◟"], intervalMs: 120 },
+  { name: "sparkle", frames: ["⁺", "˚", "*", "✧", "✦", "✧", "*", "˚"], intervalMs: 140 },
+  { name: "ascii", frames: ["|", "/", "-", "\\"], intervalMs: 100 },
+  { name: "scan", frames: ["[   ]", "[=  ]", "[== ]", "[===]", "[ ==]", "[  =]"], intervalMs: 130 },
+  { name: "blocks", frames: ["▖", "▘", "▝", "▗"], intervalMs: 120 },
+] as const satisfies readonly WorkingAnimation[];
+
+export const DEFAULT_WORKING_ANIMATION = WORKING_ANIMATIONS[0];
 const CENTER_TEXT = "I HAD POTENTIAL";
 
 type WorkingState = {
@@ -151,6 +174,78 @@ function hideBuiltInWorking(ctx: ExtensionContext): void {
 
 function joinStatusLabels(parts: string[], separator: string): string {
   return parts.filter(Boolean).join(separator);
+}
+
+function safeRandomUnit(random: () => number): number {
+  const value = random();
+  if (!Number.isFinite(value)) return 0;
+  return Math.max(0, Math.min(0.999999999, value));
+}
+
+export function pickWorkingAnimation(
+  previous: WorkingAnimation | undefined,
+  random: () => number = Math.random,
+): WorkingAnimation {
+  const nextIndex = Math.floor(safeRandomUnit(random) * WORKING_ANIMATIONS.length);
+  const previousIndex = previous === undefined
+    ? -1
+    : WORKING_ANIMATIONS.findIndex((animation) => animation.name === previous.name);
+
+  if (WORKING_ANIMATIONS.length > 1 && nextIndex === previousIndex) {
+    return WORKING_ANIMATIONS[(nextIndex + 1) % WORKING_ANIMATIONS.length];
+  }
+
+  return WORKING_ANIMATIONS[nextIndex] ?? DEFAULT_WORKING_ANIMATION;
+}
+
+export function getWorkingAnimationFrame(animation: WorkingAnimation, frameIndex: number): string {
+  const frames = animation.frames.length > 0 ? animation.frames : DEFAULT_WORKING_ANIMATION.frames;
+  const index = Math.abs(frameIndex) % frames.length;
+  const frame = frames[index] ?? frames[0] ?? "";
+  const width = frames.reduce((maxWidth, candidate) => Math.max(maxWidth, visibleWidth(candidate)), 0);
+  return frame + " ".repeat(Math.max(0, width - visibleWidth(frame)));
+}
+
+function getWorkingAnimation(name: string): WorkingAnimation | undefined {
+  const normalized = name.trim().toLowerCase();
+  return WORKING_ANIMATIONS.find((animation) => animation.name === normalized);
+}
+
+function workingAnimationSummary(animation: WorkingAnimation): string {
+  return `${animation.name} (${animation.frames.join(" ")})`;
+}
+
+function workingAnimationCommandHelp(): string {
+  return `Usage: /working-animation [random|${WORKING_ANIMATIONS.map((animation) => animation.name).join("|")}]`;
+}
+
+function getWorkingAnimationCompletions(prefix: string): AutocompleteItem[] | null {
+  const normalized = prefix.trim().toLowerCase();
+  const items: AutocompleteItem[] = [
+    {
+      value: "random",
+      label: "random",
+      description: "Pick a different animation for each prompt.",
+    },
+    {
+      value: "list",
+      label: "list",
+      description: "Show current mode and available animation names.",
+    },
+    {
+      value: "reset",
+      label: "reset",
+      description: "Alias for random selection.",
+    },
+    ...WORKING_ANIMATIONS.map((animation) => ({
+      value: animation.name,
+      label: animation.name,
+      description: animation.frames.join(" "),
+    })),
+  ];
+
+  const filtered = items.filter((item) => item.value.startsWith(normalized));
+  return filtered.length > 0 ? filtered : null;
 }
 
 class AmpEditor extends CustomEditor {
@@ -483,6 +578,8 @@ export default function (pi: ExtensionAPI) {
   let commandPaletteOpen = false;
   let isWorking = false;
   let workingMessage = WORKING_WAITING;
+  let forcedWorkingAnimation: WorkingAnimation | undefined;
+  let workingAnimation: WorkingAnimation | undefined;
   let workingFrameIndex = 0;
   let promptStartedAt: number | undefined;
   let finishedPromptElapsedMs: number | undefined;
@@ -490,6 +587,7 @@ export default function (pi: ExtensionAPI) {
   let finishedStatusTimer: ReturnType<typeof setTimeout> | undefined;
 
   const requestRender = () => activeTui?.requestRender();
+  const getActiveWorkingAnimation = () => workingAnimation ?? DEFAULT_WORKING_ANIMATION;
 
   const stopWorkingTimer = () => {
     if (!workingTimer) return;
@@ -499,10 +597,13 @@ export default function (pi: ExtensionAPI) {
 
   const startWorkingTimer = () => {
     stopWorkingTimer();
+    const animation = getActiveWorkingAnimation();
+    const frameCount = Math.max(1, animation.frames.length);
     workingTimer = setInterval(() => {
-      workingFrameIndex = (workingFrameIndex + 1) % WORKING_FRAMES.length;
+      workingFrameIndex = (workingFrameIndex + 1) % frameCount;
       requestRender();
-    }, 160);
+    }, animation.intervalMs);
+    workingTimer.unref?.();
   };
 
   const stopFinishedStatusTimer = () => {
@@ -531,6 +632,13 @@ export default function (pi: ExtensionAPI) {
   const setWorkingMessage = (message: string, ctx?: ExtensionContext) => {
     workingMessage = message;
     ctx?.ui.setWorkingMessage(message);
+    requestRender();
+  };
+
+  const setAnimation = (animation: WorkingAnimation | undefined) => {
+    workingAnimation = animation;
+    workingFrameIndex = 0;
+    if (isWorking) startWorkingTimer();
     requestRender();
   };
 
@@ -567,6 +675,38 @@ export default function (pi: ExtensionAPI) {
     });
   };
 
+  pi.registerCommand("working-animation", {
+    description: "Set Amp editor working animation: random or a named animation.",
+    getArgumentCompletions: getWorkingAnimationCompletions,
+    handler: async (args, ctx) => {
+      const value = args.trim().toLowerCase();
+      if (!value || value === "list") {
+        const current = forcedWorkingAnimation
+          ? `fixed ${workingAnimationSummary(forcedWorkingAnimation)}`
+          : "random";
+        ctx.ui.notify(`Working animation: ${current}. ${workingAnimationCommandHelp()}`, "info");
+        return;
+      }
+
+      if (value === "random" || value === "reset") {
+        forcedWorkingAnimation = undefined;
+        setAnimation(pickWorkingAnimation(workingAnimation));
+        ctx.ui.notify("Working animation will be randomly selected for each prompt.", "info");
+        return;
+      }
+
+      const animation = getWorkingAnimation(value);
+      if (!animation) {
+        ctx.ui.notify(workingAnimationCommandHelp(), "error");
+        return;
+      }
+
+      forcedWorkingAnimation = animation;
+      setAnimation(animation);
+      ctx.ui.notify(`Working animation set to ${workingAnimationSummary(animation)}.`, "info");
+    },
+  });
+
   pi.on("session_start", (_event, ctx) => {
     if (!ctx.hasUI) return;
 
@@ -578,7 +718,7 @@ export default function (pi: ExtensionAPI) {
       return new AmpEditor(tui, theme, keybindings, () => activeCtx ?? ctx, () => activeThinkingLevel, () => ({
         active: isWorking,
         message: workingMessage,
-        frame: WORKING_FRAMES[workingFrameIndex] ?? WORKING_FRAMES[0],
+        frame: getWorkingAnimationFrame(getActiveWorkingAnimation(), workingFrameIndex),
         elapsedMs: promptStartedAt === undefined ? undefined : Date.now() - promptStartedAt,
         finishedElapsedMs: finishedPromptElapsedMs,
       }), openCommandPalette);
@@ -603,6 +743,7 @@ export default function (pi: ExtensionAPI) {
     activeThinkingLevel = pi.getThinkingLevel();
     activeToolExecutions.clear();
     isWorking = true;
+    workingAnimation = forcedWorkingAnimation ?? pickWorkingAnimation(workingAnimation);
     clearFinishedStatus();
     promptStartedAt = Date.now();
     workingFrameIndex = 0;
@@ -664,6 +805,7 @@ export default function (pi: ExtensionAPI) {
     stopFinishedStatusTimer();
     promptStartedAt = undefined;
     finishedPromptElapsedMs = undefined;
+    workingAnimation = undefined;
     activeTui = undefined;
   });
 }
