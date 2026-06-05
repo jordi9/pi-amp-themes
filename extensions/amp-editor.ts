@@ -87,7 +87,7 @@ function getContextWarning(percent: number | null | undefined): { label: string;
   if (typeof percent !== "number" || !Number.isFinite(percent)) return undefined;
   if (percent > 85) return { label: "dumbest", color: "error" };
   if (percent > 70) return { label: "dumber", color: "warning" };
-  if (percent > 50) return { label: "dumb", color: "accent" };
+  if (percent > 50) return { label: "dumb", color: "mdHeading" };
   return undefined;
 }
 

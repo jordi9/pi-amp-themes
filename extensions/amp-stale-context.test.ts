@@ -753,7 +753,7 @@ test("amp editor colors high context labels by severity", () => {
   );
   const render = () => editor.render(240).join("\n");
 
-  expect(render()).toContain("[accent]dumb");
+  expect(render()).toContain("[mdHeading]dumb");
 
   percent = 71;
   expect(render()).toContain("[warning]dumber");
