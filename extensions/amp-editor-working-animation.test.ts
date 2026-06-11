@@ -79,3 +79,20 @@ test("working-animation command exposes argument completions", () => {
   expect(command.getArgumentCompletions?.("amp")?.map((item) => item.value)).toEqual(["amp-wave"]);
   expect(command.getArgumentCompletions?.("")?.map((item) => item.value)).toContain("random");
 });
+
+test("registers copy current prompt shortcut", () => {
+  let shortcut: { key: string; description?: string } | undefined;
+  const pi = {
+    on() {},
+    getCommands: () => [],
+    getThinkingLevel: () => "medium",
+    registerCommand() {},
+    registerShortcut(key: string, options: { description?: string }) {
+      shortcut = { key, description: options.description };
+    },
+  };
+
+  ampEditorExtension(pi as never);
+
+  expect(shortcut).toEqual({ key: "ctrl+shift+x", description: "Copy current prompt to clipboard" });
+});

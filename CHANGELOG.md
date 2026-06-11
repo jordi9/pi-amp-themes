@@ -10,6 +10,7 @@
 - Upgrade bundled `pi-tool-display` to 0.4.2, which uses the current `@earendil-works` Pi peer namespace.
 - Show the active prompt elapsed time next to the Amp editor's `Esc to cancel` working hint, then keep the finished elapsed time visible for 7 seconds.
 - Randomly pick an editor working-status animation per prompt, including the original `~ → ≈ → ≋` Amp wave and new Hermes-inspired spinner styles, with `/working-animation` and argument autocomplete for experimentation.
+- Add `Ctrl+Shift+X` for copying the current prompt editor text to the system clipboard with a transient editor status.
 - Add fun high-context labels in the editor with escalating colors: `dumb`, `dumber`, and `dumbest`.
 - Render assistant `txt` code fences containing HTTP endpoint lists as compact Markdown route tables.
 

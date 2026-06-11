@@ -1,7 +1,7 @@
 import { CustomEditor, type ExtensionAPI, type ExtensionContext, type ThemeColor } from "@earendil-works/pi-coding-agent";
 import { truncateToWidth, visibleWidth, type AutocompleteItem } from "@earendil-works/pi-tui";
 import { BUILTIN_COMMAND_PALETTE_ITEMS, CommandPaletteOverlay, type CommandPaletteItem, type CommandPaletteResult, stripAnsi } from "./amp-command-palette.js";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { homedir } from "node:os";
 import { relative } from "node:path";
 
@@ -20,6 +20,8 @@ const WORKING_THINKING = "Thinking";
 const WORKING_STREAMING = "Streaming";
 const WORKING_TOOLS = "Using tools";
 const FINISHED_STATUS_MS = 7000;
+const COPY_PROMPT_STATUS_MS = 3000;
+const COPY_PROMPT_SHORTCUT = "ctrl+shift+x";
 
 // Compact, single-line animations for the editor status row. Inspired by
 // Hermes' grab-bag of spinners while keeping most frames narrow enough that
@@ -54,6 +56,29 @@ type GitInfo = {
   added: number;
   modified: number;
   removed: number;
+};
+
+type ClipboardCommand = {
+  command: string;
+  args: string[];
+  label: string;
+};
+
+type ClipboardResult =
+  | { ok: true; label: string }
+  | { ok: false; message: string };
+
+type CopyPromptStatus = {
+  message: string;
+  color: ThemeColor;
+  icon: string;
+};
+
+type ShortcutRegistrar = {
+  registerShortcut?: (shortcut: string, options: {
+    description: string;
+    handler: (ctx: ExtensionContext) => void | Promise<void>;
+  }) => void;
 };
 
 let gitCache: { cwd: string; at: number; info: GitInfo } | undefined;
@@ -94,6 +119,85 @@ function getGitInfo(cwd: string): GitInfo {
   const info = { branch, changedFiles, added: added - modified, modified, removed: removed - modified };
   gitCache = { cwd, at: now, info };
   return info;
+}
+
+function clipboardCandidates(): ClipboardCommand[] {
+  const commands: ClipboardCommand[] = [];
+  const add = (command: string, args: string[], label = command) => {
+    if (commands.some((candidate) => candidate.command === command && candidate.args.join("\0") === args.join("\0"))) return;
+    commands.push({ command, args, label });
+  };
+
+  if (process.platform === "darwin") {
+    add("pbcopy", [], "pbcopy");
+    return commands;
+  }
+
+  if (process.platform === "win32") {
+    add("powershell.exe", ["-NoProfile", "-Command", "Set-Clipboard -Value ([Console]::In.ReadToEnd())"], "powershell");
+    add("clip.exe", [], "clip.exe");
+    return commands;
+  }
+
+  if (process.env.WAYLAND_DISPLAY) add("wl-copy", [], "wl-copy");
+  if (process.env.DISPLAY) {
+    add("xclip", ["-selection", "clipboard"], "xclip");
+    add("xsel", ["--clipboard", "--input"], "xsel");
+  }
+  add("wl-copy", [], "wl-copy");
+  add("xclip", ["-selection", "clipboard"], "xclip");
+  add("xsel", ["--clipboard", "--input"], "xsel");
+  add("termux-clipboard-set", [], "termux-clipboard-set");
+  if (process.env.WSL_DISTRO_NAME || process.env.WSL_INTEROP) add("clip.exe", [], "clip.exe");
+  return commands;
+}
+
+function writeClipboard(text: string): ClipboardResult {
+  const errors: string[] = [];
+
+  for (const candidate of clipboardCandidates()) {
+    const result = spawnSync(candidate.command, candidate.args, {
+      input: text,
+      encoding: "utf8",
+      stdio: ["pipe", "ignore", "pipe"],
+    });
+
+    if (result.error) {
+      errors.push(`${candidate.label}: ${result.error.message}`);
+      continue;
+    }
+
+    if (result.status === 0) return { ok: true, label: candidate.label };
+
+    const stderr = typeof result.stderr === "string" ? result.stderr.trim() : "";
+    const detail = stderr || (result.signal ? `terminated by ${result.signal}` : `exit ${result.status ?? "unknown"}`);
+    errors.push(`${candidate.label}: ${detail}`);
+  }
+
+  return {
+    ok: false,
+    message: errors[0] ?? "no clipboard command found",
+  };
+}
+
+function getEditorText(ctx: ExtensionContext): string {
+  return (ctx.ui as typeof ctx.ui & { getEditorText?: () => string }).getEditorText?.() ?? "";
+}
+
+function copyPromptToClipboard(ctx: ExtensionContext): CopyPromptStatus | undefined {
+  if (!ctx.hasUI) return undefined;
+
+  const prompt = getEditorText(ctx);
+  if (!prompt) {
+    return { icon: "!", color: "warning", message: "prompt empty" };
+  }
+
+  const result = writeClipboard(prompt);
+  if (result.ok) {
+    return { icon: "✓", color: "success", message: "prompt copied to clipboard" };
+  }
+
+  return { icon: "!", color: "error", message: `copy failed: ${result.message}` };
 }
 
 function formatCount(value: number | null | undefined): string {
@@ -256,6 +360,7 @@ class AmpEditor extends CustomEditor {
     private readonly getCtx: () => ExtensionContext,
     private readonly getThinkingLevel: () => string,
     private readonly getWorkingState: () => WorkingState,
+    private readonly getCopyPromptStatus: () => CopyPromptStatus | undefined,
     private readonly openCommandPalette: (initialQuery: string | undefined, onSelect: (result: CommandPaletteResult) => void) => void,
   ) {
     super(tui, theme, keybindings, { paddingX: 1 });
@@ -313,10 +418,12 @@ class AmpEditor extends CustomEditor {
     const cwdLabel = this.getCwdLabel();
     const workingLabel = this.getWorkingLabel();
     const outputExpandedLabel = this.getOutputExpandedLabel();
+    const copyPromptLabel = this.getCopyPromptLabel();
     const gitChangesLabel = this.getGitChangesLabel();
     const leftStatusLabel = joinStatusLabels([
       workingLabel,
       outputExpandedLabel,
+      copyPromptLabel,
     ], ` ${this.fg("muted", "·")} `);
 
     return [
@@ -425,6 +532,13 @@ class AmpEditor extends CustomEditor {
     if (!this.isOutputExpanded()) return "";
 
     return `${this.fg("warning", "output expanded")} ${this.fg("muted", "·")} ${this.fg("accent", "Ctrl+O")} ${this.fg("muted", "to collapse")}`;
+  }
+
+  private getCopyPromptLabel(): string {
+    const status = this.getCopyPromptStatus();
+    if (!status) return "";
+
+    return `${this.fg(status.color, status.icon)} ${this.fg("text", status.message)}`;
   }
 
   private isOutputExpanded(): boolean {
@@ -583,8 +697,10 @@ export default function (pi: ExtensionAPI) {
   let workingFrameIndex = 0;
   let promptStartedAt: number | undefined;
   let finishedPromptElapsedMs: number | undefined;
+  let copyPromptStatus: CopyPromptStatus | undefined;
   let workingTimer: ReturnType<typeof setInterval> | undefined;
   let finishedStatusTimer: ReturnType<typeof setTimeout> | undefined;
+  let copyPromptStatusTimer: ReturnType<typeof setTimeout> | undefined;
 
   const requestRender = () => activeTui?.requestRender();
   const getActiveWorkingAnimation = () => workingAnimation ?? DEFAULT_WORKING_ANIMATION;
@@ -627,6 +743,31 @@ export default function (pi: ExtensionAPI) {
       requestRender();
     }, FINISHED_STATUS_MS);
     finishedStatusTimer.unref?.();
+  };
+
+  const stopCopyPromptStatusTimer = () => {
+    if (!copyPromptStatusTimer) return;
+    clearTimeout(copyPromptStatusTimer);
+    copyPromptStatusTimer = undefined;
+  };
+
+  const clearCopyPromptStatus = () => {
+    stopCopyPromptStatusTimer();
+    if (!copyPromptStatus) return;
+    copyPromptStatus = undefined;
+    requestRender();
+  };
+
+  const showCopyPromptStatus = (status: CopyPromptStatus) => {
+    stopCopyPromptStatusTimer();
+    copyPromptStatus = status;
+    requestRender();
+    copyPromptStatusTimer = setTimeout(() => {
+      copyPromptStatusTimer = undefined;
+      copyPromptStatus = undefined;
+      requestRender();
+    }, COPY_PROMPT_STATUS_MS);
+    copyPromptStatusTimer.unref?.();
   };
 
   const setWorkingMessage = (message: string, ctx?: ExtensionContext) => {
@@ -675,6 +816,14 @@ export default function (pi: ExtensionAPI) {
     });
   };
 
+  (pi as typeof pi & ShortcutRegistrar).registerShortcut?.(COPY_PROMPT_SHORTCUT, {
+    description: "Copy current prompt to clipboard",
+    handler: async (ctx) => {
+      const status = copyPromptToClipboard(ctx);
+      if (status) showCopyPromptStatus(status);
+    },
+  });
+
   pi.registerCommand("working-animation", {
     description: "Set Amp editor working animation: random or a named animation.",
     getArgumentCompletions: getWorkingAnimationCompletions,
@@ -721,7 +870,7 @@ export default function (pi: ExtensionAPI) {
         frame: getWorkingAnimationFrame(getActiveWorkingAnimation(), workingFrameIndex),
         elapsedMs: promptStartedAt === undefined ? undefined : Date.now() - promptStartedAt,
         finishedElapsedMs: finishedPromptElapsedMs,
-      }), openCommandPalette);
+      }), () => copyPromptStatus, openCommandPalette);
     });
 
     hideBuiltInWorking(ctx);
@@ -803,8 +952,10 @@ export default function (pi: ExtensionAPI) {
   pi.on("session_shutdown", () => {
     stopWorkingTimer();
     stopFinishedStatusTimer();
+    clearCopyPromptStatus();
     promptStartedAt = undefined;
     finishedPromptElapsedMs = undefined;
+    copyPromptStatus = undefined;
     workingAnimation = undefined;
     activeTui = undefined;
   });
