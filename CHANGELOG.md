@@ -13,6 +13,7 @@
 - Add `Ctrl+Shift+X` for copying the current prompt editor text to the system clipboard with a transient editor status.
 - Add fun high-context labels in the editor with escalating colors: `dumb`, `dumber`, and `dumbest`.
 - Render assistant `txt` code fences containing HTTP endpoint lists as compact Markdown route tables.
+- Collapse `pi-playwright` bash wrapper calls into colorized Playwright action summaries while keeping compact bash output rendering.
 
 ## 0.2.17
 

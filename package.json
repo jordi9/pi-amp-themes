@@ -34,6 +34,7 @@
       "./extensions/amp-editor.ts",
       "./extensions/amp-assistant-markdown.ts",
       "./extensions/amp-skill-read.ts",
+      "./extensions/amp-playwright-bash.ts",
       "./node_modules/pi-tool-display/index.ts",
       "./extensions/amp-user-message.ts"
     ],
