@@ -2,7 +2,12 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { expect, test } from "vitest";
 
-import { summarizePlaywrightCommand, tokenizeShellLike } from "./amp-playwright-bash.js";
+import {
+  summarizeImpeccableCommand,
+  summarizeImpeccableResult,
+  summarizePlaywrightCommand,
+  tokenizeShellLike,
+} from "./amp-playwright-bash.js";
 
 test("loads before pi-tool-display so its bash override wins", () => {
   const packageJsonPath = fileURLToPath(new URL("../package.json", import.meta.url));
@@ -67,6 +72,56 @@ test("summarizes common pi-playwright wrapper commands", () => {
     .toBe("playwright detect dev servers · json");
 });
 
+test("summarizes common impeccable live commands", () => {
+  expect(summarizeImpeccableCommand("node .agents/skills/impeccable/scripts/live.mjs"))
+    .toBe("impeccable live boot");
+  expect(summarizeImpeccableCommand("node .agents/skills/impeccable/scripts/live-poll.mjs"))
+    .toBe("impeccable live poll");
+  expect(summarizeImpeccableCommand("node .agents/skills/impeccable/scripts/live-wrap.mjs --id 77d9b92a --count 3 --tag aside --text \"Dos Comas Plan\""))
+    .toBe("impeccable live wrap aside · 3 variants · 77d9b92a · \"Dos Comas Plan\"");
+});
+
+test("summarizes impeccable live replies before chained polls", () => {
+  const command = "node .agents/skills/impeccable/scripts/live-poll.mjs --reply 4e1e3d6c done --file src/components/dev/CtuBar.tsx && node .agents/skills/impeccable/scripts/live-poll.mjs";
+
+  expect(summarizeImpeccableCommand(command)).toBe(
+    "impeccable live reply done → src/components/dev/CtuBar.tsx · 4e1e3d6c",
+  );
+});
+
+test("summarizes impeccable JSON results when collapsed", () => {
+  expect(summarizeImpeccableResult(
+    "node .agents/skills/impeccable/scripts/live.mjs",
+    JSON.stringify({
+      ok: true,
+      serverPort: 8400,
+      pageFiles: ["index.html"],
+      hasProduct: true,
+      productPath: "PRODUCT.md",
+      hasDesign: false,
+      designPath: "DESIGN.md",
+    }, null, 2),
+  )).toBe("live ready · helper :8400 · 1 page · PRODUCT.md · no DESIGN.md");
+
+  expect(summarizeImpeccableResult(
+    "node .agents/skills/impeccable/scripts/live-poll.mjs",
+    JSON.stringify({
+      type: "generate",
+      id: "77d9b92a",
+      action: "bolder",
+      count: 3,
+      element: { tagName: "ASIDE" },
+      screenshotPath: "/tmp/shot.png",
+    }),
+  )).toBe("generate · 77d9b92a · bolder · 3 variants · aside · screenshot");
+
+  expect(summarizeImpeccableResult(
+    "node .agents/skills/impeccable/scripts/live-complete.mjs --id 77d9b92a && node .agents/skills/impeccable/scripts/live-poll.mjs",
+    '{"phase":"completed"}\n{"type":"timeout"}',
+  )).toBe("poll timeout");
+});
+
 test("ignores unrelated bash commands", () => {
   expect(summarizePlaywrightCommand("npm test")).toBeUndefined();
+  expect(summarizeImpeccableCommand("npm test")).toBeUndefined();
 });

@@ -168,10 +168,14 @@ function isDetectDevServersToken(token: string): boolean {
   );
 }
 
+function isShellCommandSeparator(token: string | undefined): boolean {
+  return token === ";" || token === "&&" || token === "||" || token === "|";
+}
+
 function takeUntilCommandSeparator(tokens: string[], start: number): string[] {
   const args: string[] = [];
   for (let index = start; index < tokens.length; index += 1) {
-    if (tokens[index] === ";") break;
+    if (isShellCommandSeparator(tokens[index])) break;
     args.push(tokens[index] ?? "");
   }
   return args;
@@ -235,7 +239,7 @@ function splitSummaryHead(head: string): { action: string; rest: string } {
   return { action, rest: restParts.join(" ").trim() };
 }
 
-function renderPlaywrightRest(rest: string, theme: ThemeLike): string {
+function renderSummaryRest(rest: string, theme: ThemeLike): string {
   if (!rest) return "";
 
   for (const arrow of [" → ", " ← "] as const) {
@@ -262,7 +266,7 @@ function renderPlaywrightSummaryCall(summary: string, args: unknown, theme: Them
     : "";
 
   text.setText(
-    `${theme.fg("toolTitle", theme.bold("$"))} ${theme.fg("warning", "◆")} ${theme.fg("customMessageLabel", theme.bold("playwright"))} ${theme.fg(colorForPlaywrightAction(action), theme.bold(action))}${renderPlaywrightRest(rest, theme)}${metaSuffix}${timeoutSuffix}`,
+    `${theme.fg("toolTitle", theme.bold("$"))} ${theme.fg("warning", "◆")} ${theme.fg("customMessageLabel", theme.bold("playwright"))} ${theme.fg(colorForPlaywrightAction(action), theme.bold(action))}${renderSummaryRest(rest, theme)}${metaSuffix}${timeoutSuffix}`,
   );
   return text;
 }
@@ -388,11 +392,413 @@ export function summarizePlaywrightCommand(command: string): string | undefined 
 
     if (!isPwScriptToken(token)) continue;
     const pwCommand = tokens[index + 1];
-    if (!pwCommand || pwCommand === ";") return undefined;
+    if (!pwCommand || isShellCommandSeparator(pwCommand)) return undefined;
     return extractPwDisplay(pwCommand, takeUntilCommandSeparator(tokens, index + 2));
   }
 
   return undefined;
+}
+
+const KNOWN_IMPECCABLE_SCRIPTS = new Set([
+  "context.mjs",
+  "context-signals.mjs",
+  "palette.mjs",
+  "detect.mjs",
+  "detect-csp.mjs",
+  "critique-storage.mjs",
+  "pin.mjs",
+  "live.mjs",
+  "live-poll.mjs",
+  "live-wrap.mjs",
+  "live-insert.mjs",
+  "live-status.mjs",
+  "live-resume.mjs",
+  "live-complete.mjs",
+  "live-server.mjs",
+  "live-accept.mjs",
+  "live-inject.mjs",
+  "live-commit-manual-edits.mjs",
+  "live-discard-manual-edits.mjs",
+  "live-copy-edit-agent.mjs",
+  "live-manual-edit-evidence.mjs",
+]);
+
+type ImpeccableInvocation = {
+  script: string;
+  args: string[];
+};
+
+function getImpeccableScriptName(token: string, fullCommand: string): string | undefined {
+  const normalized = token.replace(/\\/g, "/");
+  const script = basename(normalized);
+  if (!KNOWN_IMPECCABLE_SCRIPTS.has(script)) return undefined;
+
+  const hasImpeccablePath = normalized.includes("impeccable/scripts/") || normalized.includes(".agents/skills/impeccable/scripts/");
+  const hasSkillDirPath = normalized.includes("$SKILL_DIR/scripts/") || normalized.includes("${SKILL_DIR}/scripts/");
+  if (hasImpeccablePath || hasSkillDirPath || fullCommand.includes("impeccable")) return script;
+  return undefined;
+}
+
+function findImpeccableInvocation(command: string): ImpeccableInvocation | undefined {
+  if (!command.includes("impeccable") && !command.includes("$SKILL_DIR") && !command.includes("${SKILL_DIR}")) return undefined;
+
+  const tokens = tokenizeShellLike(command);
+  for (let index = 0; index < tokens.length; index += 1) {
+    const script = getImpeccableScriptName(tokens[index] ?? "", command);
+    if (!script) continue;
+    return { script, args: takeUntilCommandSeparator(tokens, index + 1) };
+  }
+
+  return undefined;
+}
+
+function formatSourcePath(rawPath: string | undefined, maxLength = 64): string | undefined {
+  if (!rawPath) return undefined;
+  const path = rawPath.replace(/^['"]|['"]$/g, "").replace(/^\.\//, "");
+  return path ? truncateInline(path, maxLength) : undefined;
+}
+
+function formatQuotedMeta(rawText: string | undefined): string | undefined {
+  if (!rawText) return undefined;
+  const text = truncateInline(rawText, 34);
+  return text ? `"${text}"` : undefined;
+}
+
+function splitClassList(rawClasses: string | undefined): string[] {
+  if (!rawClasses) return [];
+  return rawClasses.split(/[,\s]+/).map((className) => className.trim()).filter(Boolean);
+}
+
+function formatElementTargetFromArgs(args: readonly string[]): string | undefined {
+  const tag = getFlagValue(args, "--tag");
+  const elementId = getFlagValue(args, "--element-id");
+  if (elementId) return `${tag ?? "element"}#${truncateInline(elementId, 28)}`;
+  if (tag) return tag;
+
+  const classes = splitClassList(getFlagValue(args, "--classes"));
+  if (classes.length > 0) return `${classes.length} ${pluralize(classes.length, "class", "classes")}`;
+  return undefined;
+}
+
+function withMeta(head: string, meta: Array<string | undefined>): string {
+  const cleanMeta = meta.filter((item): item is string => Boolean(item));
+  return cleanMeta.length > 0 ? `${head} · ${cleanMeta.join(" · ")}` : head;
+}
+
+function summarizeLivePoll(args: readonly string[]): string {
+  const replyIndex = args.indexOf("--reply");
+  if (replyIndex >= 0) {
+    const id = args[replyIndex + 1];
+    const status = args[replyIndex + 2] ?? "reply";
+    const file = formatSourcePath(getFlagValue(args, "--file"));
+    const head = file ? `impeccable live reply ${status} → ${file}` : `impeccable live reply ${status}`;
+    return withMeta(head, [id, getFlagValue(args, "--data") ? "data" : undefined]);
+  }
+
+  const timeout = getFlagValue(args, "--timeout");
+  if (args.includes("--stream")) return withMeta("impeccable live poll", ["stream", timeout ? `timeout ${timeout}` : undefined]);
+  return withMeta("impeccable live poll", [timeout ? `timeout ${timeout}` : undefined]);
+}
+
+function summarizeLiveWrap(args: readonly string[]): string {
+  const target = formatElementTargetFromArgs(args) ?? "element";
+  const file = formatSourcePath(getFlagValue(args, "--file"));
+  const count = getFlagValue(args, "--count") ?? "3";
+  const id = getFlagValue(args, "--id");
+  const text = formatQuotedMeta(getFlagValue(args, "--text"));
+  const head = file ? `impeccable live wrap ${target} ← ${file}` : `impeccable live wrap ${target}`;
+  return withMeta(head, [`${count} variants`, id, text]);
+}
+
+function summarizeLiveInsert(args: readonly string[]): string {
+  const target = formatElementTargetFromArgs(args) ?? "anchor";
+  const position = getFlagValue(args, "--position") ?? "insert";
+  const count = getFlagValue(args, "--count") ?? "3";
+  const id = getFlagValue(args, "--id");
+  const text = formatQuotedMeta(getFlagValue(args, "--text"));
+  return withMeta(`impeccable live insert ${position} ${target}`, [`${count} variants`, id, text]);
+}
+
+function summarizeLiveServer(args: readonly string[]): string {
+  const subcommand = args.find((arg) => !arg.startsWith("-")) ?? (args.includes("--background") ? "start" : "server");
+  return withMeta(`impeccable live server ${subcommand}`, [args.includes("--background") ? "background" : undefined]);
+}
+
+function summarizeDetect(args: readonly string[]): string {
+  const targets = args.filter((arg) => !arg.startsWith("-")).map((arg) => formatSourcePath(arg, 36)).filter((arg): arg is string => Boolean(arg));
+  const head = targets.length > 0 ? `impeccable detect ${targets.slice(0, 2).join(" ")}` : "impeccable detect";
+  return withMeta(head, [args.includes("--json") ? "json" : undefined, targets.length > 2 ? `+${targets.length - 2}` : undefined]);
+}
+
+function summarizeCritiqueStorage(args: readonly string[]): string {
+  const action = args[0] ?? "storage";
+  const target = formatSourcePath(args[1], 44);
+  return withMeta(`impeccable critique ${action}`, [target]);
+}
+
+function summarizePin(args: readonly string[]): string {
+  const action = args[0] === "unpin" ? "unpin" : "pin";
+  return withMeta(`impeccable ${action}`, [args[1]]);
+}
+
+function summarizeImpeccableInvocation(invocation: ImpeccableInvocation): string {
+  const { script, args } = invocation;
+
+  switch (script) {
+    case "context.mjs":
+      return "impeccable context";
+    case "context-signals.mjs":
+      return "impeccable context signals";
+    case "palette.mjs":
+      return "impeccable palette";
+    case "detect-csp.mjs":
+      return "impeccable detect CSP";
+    case "detect.mjs":
+      return summarizeDetect(args);
+    case "critique-storage.mjs":
+      return summarizeCritiqueStorage(args);
+    case "pin.mjs":
+      return summarizePin(args);
+    case "live.mjs":
+      return "impeccable live boot";
+    case "live-poll.mjs":
+      return summarizeLivePoll(args);
+    case "live-wrap.mjs":
+      return summarizeLiveWrap(args);
+    case "live-insert.mjs":
+      return summarizeLiveInsert(args);
+    case "live-status.mjs":
+      return "impeccable live status";
+    case "live-resume.mjs":
+      return withMeta("impeccable live resume", [getFlagValue(args, "--id")]);
+    case "live-complete.mjs":
+      return withMeta("impeccable live complete", [getFlagValue(args, "--id"), args.includes("--discarded") ? "discarded" : undefined]);
+    case "live-server.mjs":
+      return summarizeLiveServer(args);
+    case "live-accept.mjs":
+      return withMeta("impeccable live accept", [getFlagValue(args, "--id") ?? args[0]]);
+    case "live-inject.mjs":
+      return withMeta("impeccable live inject", [args.includes("--check") ? "check" : undefined, args.includes("--remove") ? "remove" : undefined]);
+    case "live-commit-manual-edits.mjs":
+      return "impeccable live commit manual edits";
+    case "live-discard-manual-edits.mjs":
+      return "impeccable live discard manual edits";
+    case "live-copy-edit-agent.mjs":
+      return "impeccable live copy edit agent";
+    case "live-manual-edit-evidence.mjs":
+      return "impeccable live manual edit evidence";
+    default: {
+      const name = script.replace(/\.mjs$/, "");
+      return withMeta(`impeccable ${name}`, [args.slice(0, 2).join(" ") || undefined]);
+    }
+  }
+}
+
+export function summarizeImpeccableCommand(command: string): string | undefined {
+  const invocation = findImpeccableInvocation(command);
+  return invocation ? summarizeImpeccableInvocation(invocation) : undefined;
+}
+
+function colorForImpeccableAction(action: string): string {
+  switch (action) {
+    case "live":
+      return "success";
+    case "detect":
+    case "critique":
+      return "warning";
+    case "context":
+    case "palette":
+      return "muted";
+    default:
+      return "accent";
+  }
+}
+
+function renderImpeccableSummaryCall(summary: string, args: unknown, theme: ThemeLike, context?: ToolRenderContextLike): Text {
+  const text = context?.lastComponent instanceof Text ? context.lastComponent : new Text("", 0, 0);
+  const [head = "run", ...meta] = summary.replace(/^impeccable\s+/, "").split(" · ");
+  const { action, rest } = splitSummaryHead(head);
+  const timeout = getTimeout(args);
+  const timeoutSuffix = timeout ? theme.fg("muted", ` (timeout ${timeout}s)`) : "";
+  const metaSuffix = meta.length > 0
+    ? ` ${theme.fg("dim", "·")} ${meta.map((item) => theme.fg("muted", item)).join(` ${theme.fg("dim", "·")} `)}`
+    : "";
+
+  text.setText(
+    `${theme.fg("toolTitle", theme.bold("$"))} ${theme.fg("warning", "◆")} ${theme.fg("customMessageLabel", theme.bold("impeccable"))} ${theme.fg(colorForImpeccableAction(action), theme.bold(action))}${renderSummaryRest(rest, theme)}${metaSuffix}${timeoutSuffix}`,
+  );
+  return text;
+}
+
+function toPlainRecord(value: unknown): Record<string, unknown> | undefined {
+  return isRecord(value) ? value : undefined;
+}
+
+function getArrayField(value: unknown, field: string): unknown[] {
+  const raw = toPlainRecord(value)?.[field];
+  return Array.isArray(raw) ? raw : [];
+}
+
+function getBooleanField(value: unknown, field: string): boolean | undefined {
+  const raw = toPlainRecord(value)?.[field];
+  return typeof raw === "boolean" ? raw : undefined;
+}
+
+function getNumberField(value: unknown, field: string): number | undefined {
+  const raw = toPlainRecord(value)?.[field];
+  return typeof raw === "number" && Number.isFinite(raw) ? raw : undefined;
+}
+
+function parseJsonOutput(rawOutput: string): unknown | undefined {
+  const trimmed = rawOutput.trim();
+  if (!trimmed.startsWith("{") && !trimmed.startsWith("[")) return undefined;
+  try {
+    return JSON.parse(trimmed) as unknown;
+  } catch {
+    // Chained live commands sometimes print one JSON object per line. Prefer the
+    // last complete object because it is usually the fresh poll event.
+    const candidates = trimmed.split(/\n+/).map((line) => line.trim()).filter((line) => line.startsWith("{") || line.startsWith("["));
+    for (let index = candidates.length - 1; index >= 0; index -= 1) {
+      try {
+        return JSON.parse(candidates[index] ?? "") as unknown;
+      } catch {
+        // Keep scanning older lines.
+      }
+    }
+    return undefined;
+  }
+}
+
+function summarizeLiveBootResult(data: Record<string, unknown>): string | undefined {
+  if (data.ok === false) {
+    const error = getStringField(data, "error") ?? "not ready";
+    const path = formatSourcePath(getStringField(data, "path") ?? getStringField(data, "configPath"));
+    return withMeta(`live ${error.replace(/_/g, " ")}`, [path]);
+  }
+  if (data.ok !== true) return undefined;
+
+  const port = getNumberField(data, "serverPort");
+  const pages = getArrayField(data, "pageFiles").filter((item): item is string => typeof item === "string");
+  const productPath = formatSourcePath(getStringField(data, "productPath")) ?? "PRODUCT.md";
+  const designPath = formatSourcePath(getStringField(data, "designPath")) ?? "DESIGN.md";
+  const hasProduct = getBooleanField(data, "hasProduct");
+  const hasDesign = getBooleanField(data, "hasDesign");
+  const drift = toPlainRecord(data.configDrift);
+
+  return withMeta("live ready", [
+    port ? `helper :${port}` : undefined,
+    `${pages.length} ${pluralize(pages.length, "page")}`,
+    hasProduct === false ? `no ${productPath}` : productPath,
+    hasDesign === false ? `no ${designPath}` : designPath,
+    drift ? "config drift" : undefined,
+  ]);
+}
+
+function summarizeLiveWrapResult(data: Record<string, unknown>, mode: "wrapped" | "inserted"): string | undefined {
+  const file = formatSourcePath(getStringField(data, "file"));
+  if (!file) return undefined;
+  const insertLine = getNumberField(data, "insertLine");
+  const styleMode = getStringField(data, "styleMode") ?? getStringField(data, "previewMode");
+  return withMeta(`${mode} ${file}`, [insertLine ? `insert @${insertLine}` : undefined, styleMode]);
+}
+
+function formatPollElement(data: Record<string, unknown>): string | undefined {
+  const element = toPlainRecord(data.element);
+  if (!element) return undefined;
+  const tag = getStringField(element, "tagName")?.toLowerCase();
+  const id = getStringField(element, "id");
+  if (id) return `${tag ?? "element"}#${truncateInline(id, 28)}`;
+  return tag;
+}
+
+function summarizeLivePollResult(data: Record<string, unknown>, invocation: ImpeccableInvocation): string | undefined {
+  const type = getStringField(data, "type");
+  if (!type) {
+    const replyIndex = invocation.args.indexOf("--reply");
+    if (replyIndex >= 0) {
+      const status = invocation.args[replyIndex + 2] ?? "reply";
+      return withMeta(`reply ${status} sent`, [invocation.args[replyIndex + 1]]);
+    }
+    return undefined;
+  }
+
+  switch (type) {
+    case "timeout":
+      return "poll timeout";
+    case "exit":
+      return "exit requested";
+    case "prefetch":
+      return withMeta("prefetch", [formatSourcePath(getStringField(data, "pageUrl"))]);
+    case "steer":
+      return withMeta("steer", [getStringField(data, "id"), formatQuotedMeta(getStringField(data, "message"))]);
+    case "generate": {
+      const id = getStringField(data, "id");
+      const action = getStringField(data, "action") ?? getStringField(data, "mode") ?? "impeccable";
+      const count = getNumberField(data, "count");
+      const element = formatPollElement(data);
+      return withMeta("generate", [id, action, count ? `${count} variants` : undefined, element, getStringField(data, "screenshotPath") ? "screenshot" : undefined]);
+    }
+    case "accept":
+      return withMeta("accept", [getStringField(data, "id"), getStringField(data, "variantId") ? `variant ${getStringField(data, "variantId")}` : undefined]);
+    case "discard":
+      return withMeta("discard", [getStringField(data, "id")]);
+    case "manual_edit_apply": {
+      const batch = toPlainRecord(data.batch);
+      const entries = getArrayField(batch, "entries");
+      return withMeta("manual edit apply", [getStringField(data, "id"), `${entries.length} ${pluralize(entries.length, "edit")}`]);
+    }
+    default:
+      return withMeta(type, [getStringField(data, "id")]);
+  }
+}
+
+function summarizeDetectResult(data: unknown): string | undefined {
+  if (!Array.isArray(data)) return undefined;
+  return `${data.length} ${pluralize(data.length, "finding")}`;
+}
+
+export function summarizeImpeccableResult(command: string, rawOutput: string): string | undefined {
+  const invocation = findImpeccableInvocation(command);
+  if (!invocation) return undefined;
+
+  const parsed = parseJsonOutput(rawOutput);
+  const record = toPlainRecord(parsed);
+  if (record && getStringField(record, "type")) {
+    return summarizeLivePollResult(
+      record,
+      invocation.script === "live-poll.mjs" ? invocation : { script: "live-poll.mjs", args: [] },
+    );
+  }
+
+  switch (invocation.script) {
+    case "live.mjs":
+      return record ? summarizeLiveBootResult(record) : undefined;
+    case "live-wrap.mjs":
+      return record ? summarizeLiveWrapResult(record, "wrapped") : undefined;
+    case "live-insert.mjs":
+      return record ? summarizeLiveWrapResult(record, "inserted") : undefined;
+    case "live-poll.mjs":
+      return record ? summarizeLivePollResult(record, invocation) : undefined;
+    case "detect.mjs":
+      return summarizeDetectResult(parsed);
+    case "detect-csp.mjs":
+      return record ? withMeta("CSP", [getStringField(record, "shape") ?? "none"]) : undefined;
+    default:
+      return undefined;
+  }
+}
+
+function renderImpeccableSummaryResult(summary: string, theme: ThemeLike): Text {
+  const [head = "done", ...meta] = summary.split(" · ");
+  const { action, rest } = splitSummaryHead(head);
+  const metaSuffix = meta.length > 0
+    ? ` ${theme.fg("dim", "·")} ${meta.map((item) => theme.fg("muted", item)).join(` ${theme.fg("dim", "·")} `)}`
+    : "";
+  return new Text(
+    `${theme.fg("muted", "↳")} ${theme.fg("customMessageLabel", theme.bold("impeccable"))} ${theme.fg(colorForImpeccableAction(action), theme.bold(action))}${renderSummaryRest(rest, theme)}${metaSuffix}`,
+    0,
+    0,
+  );
 }
 
 function prepareOutputLines(rawText: string, options: ToolRenderResultOptions): string[] {
@@ -502,6 +908,13 @@ export function renderAmpBashResult(
     return renderBashErrorResult(rawOutput, options, config, theme, details);
   }
 
+  if (!options.expanded) {
+    const impeccableSummary = summarizeImpeccableResult(getStringField(context?.args, "command") ?? "", rawOutput);
+    if (impeccableSummary) {
+      return renderImpeccableSummaryResult(impeccableSummary, theme);
+    }
+  }
+
   const lines = prepareOutputLines(rawOutput, options);
   if (lines.length === 0) {
     let text = formatBashNoOutputLine(getStringField(context?.args, "command"), theme);
@@ -559,10 +972,17 @@ function createAmpBashTool(): RuntimeToolLike {
       );
     },
     renderCall(args, theme, context) {
-      const summary = summarizePlaywrightCommand(getCommand(args) ?? "");
-      if (summary) {
-        return renderPlaywrightSummaryCall(summary, args, theme, context);
+      const command = getCommand(args) ?? "";
+      const playwrightSummary = summarizePlaywrightCommand(command);
+      if (playwrightSummary) {
+        return renderPlaywrightSummaryCall(playwrightSummary, args, theme, context);
       }
+
+      const impeccableSummary = summarizeImpeccableCommand(command);
+      if (impeccableSummary) {
+        return renderImpeccableSummaryCall(impeccableSummary, args, theme, context);
+      }
+
       return renderBashCall(args as BashArgs, theme, context);
     },
     renderResult(result, options, theme, context) {
