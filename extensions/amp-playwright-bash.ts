@@ -180,6 +180,225 @@ export function tokenizeShellLike(input: string): string[] {
   return tokens;
 }
 
+type PythonHeredocHeader = {
+  delimiter: string;
+  stripLeadingTabs: boolean;
+};
+
+type PythonHeredocBlock = {
+  bodyLines: string[];
+  delimiterLine: string;
+  headerLine: string;
+  lineNumberWidth: number;
+};
+
+type PythonHeredocDisplayItem =
+  | { kind: "python"; block: PythonHeredocBlock }
+  | { kind: "shell"; line: string };
+
+type PythonHeredocCommandDetails = {
+  bodyLineCount: number;
+  formattedCommand: string;
+  items: PythonHeredocDisplayItem[];
+  previewLine?: string;
+  shellLineCount: number;
+};
+
+function isPythonExecutableToken(token: string): boolean {
+  const executable = basename(token.replace(/\\/g, "/"));
+  return /^python(?:\d+(?:\.\d+)*)?$/.test(executable);
+}
+
+function parseHeredocToken(tokens: readonly string[], index: number): PythonHeredocHeader | undefined {
+  const token = tokens[index] ?? "";
+  if (token.startsWith("<<<")) return undefined;
+
+  let delimiter: string | undefined;
+  let stripLeadingTabs = false;
+
+  if (token === "<<" || token === "<<-") {
+    delimiter = tokens[index + 1];
+    stripLeadingTabs = token === "<<-";
+  } else if (token.startsWith("<<-")) {
+    delimiter = token.slice(3);
+    stripLeadingTabs = true;
+  } else if (token.startsWith("<<")) {
+    delimiter = token.slice(2);
+  }
+
+  const cleanDelimiter = delimiter?.replace(/^['"]|['"]$/g, "").trim();
+  if (!cleanDelimiter) return undefined;
+  return { delimiter: cleanDelimiter, stripLeadingTabs };
+}
+
+function parsePythonHeredocHeader(line: string): PythonHeredocHeader | undefined {
+  const tokens = tokenizeShellLike(line);
+  for (let index = 0; index < tokens.length; index += 1) {
+    const header = parseHeredocToken(tokens, index);
+    if (!header) continue;
+    if (tokens.slice(0, index).some(isPythonExecutableToken)) return header;
+  }
+  return undefined;
+}
+
+function isHeredocEndLine(line: string, header: PythonHeredocHeader): boolean {
+  const candidate = header.stripLeadingTabs ? line.replace(/^\t+/, "") : line;
+  return candidate === header.delimiter;
+}
+
+function commonWhitespacePrefix(left: string, right: string): string {
+  let index = 0;
+  while (index < left.length && index < right.length && left[index] === right[index]) {
+    index += 1;
+  }
+  return left.slice(0, index);
+}
+
+function dedentCommonWhitespace(lines: readonly string[]): string[] {
+  let prefix: string | undefined;
+
+  for (const line of lines) {
+    if (line.trim().length === 0) continue;
+    const indent = line.match(/^[ \t]*/)?.[0] ?? "";
+    prefix = prefix === undefined ? indent : commonWhitespacePrefix(prefix, indent);
+    if (prefix.length === 0) break;
+  }
+
+  if (!prefix) return [...lines];
+  return lines.map((line) => line.startsWith(prefix) ? line.slice(prefix.length) : line);
+}
+
+function formatPythonBodyLines(lines: readonly string[]): string[] {
+  const lineNumberWidth = String(Math.max(1, lines.length)).length;
+  return lines.map((line, index) => `  ${String(index + 1).padStart(lineNumberWidth)} │ ${line}`);
+}
+
+function getPythonHeredocCommandDetails(command: string): PythonHeredocCommandDetails | undefined {
+  const normalizedCommand = command.replace(/\r\n/g, "\n");
+  const lines = normalizedCommand.split("\n");
+  const formatted: string[] = [];
+  const items: PythonHeredocDisplayItem[] = [];
+  let bodyLineCount = 0;
+  let previewLine: string | undefined;
+  let shellLineCount = 0;
+
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index] ?? "";
+    const header = parsePythonHeredocHeader(line);
+    if (!header) {
+      formatted.push(line);
+      if (line.trim()) {
+        items.push({ kind: "shell", line });
+        shellLineCount += 1;
+      }
+      continue;
+    }
+
+    let endIndex = -1;
+    for (let candidateIndex = index + 1; candidateIndex < lines.length; candidateIndex += 1) {
+      if (isHeredocEndLine(lines[candidateIndex] ?? "", header)) {
+        endIndex = candidateIndex;
+        break;
+      }
+    }
+
+    if (endIndex < 0) {
+      formatted.push(line);
+      if (line.trim()) {
+        items.push({ kind: "shell", line });
+        shellLineCount += 1;
+      }
+      continue;
+    }
+
+    const bodyLines = dedentCommonWhitespace(lines.slice(index + 1, endIndex));
+    const delimiterLine = lines[endIndex] ?? header.delimiter;
+    const block: PythonHeredocBlock = {
+      bodyLines,
+      delimiterLine,
+      headerLine: line,
+      lineNumberWidth: String(Math.max(1, bodyLines.length)).length,
+    };
+
+    items.push({ kind: "python", block });
+    bodyLineCount += bodyLines.length;
+    previewLine ??= bodyLines.find((bodyLine) => bodyLine.trim().length > 0)?.trim();
+    formatted.push(line, ...formatPythonBodyLines(bodyLines), delimiterLine);
+    index = endIndex;
+  }
+
+  return bodyLineCount > 0
+    ? {
+        bodyLineCount,
+        formattedCommand: formatted.join("\n"),
+        items,
+        previewLine: previewLine ? truncateInline(previewLine, 48) : undefined,
+        shellLineCount,
+      }
+    : undefined;
+}
+
+export function formatPythonHeredocCommand(command: string): string | undefined {
+  return getPythonHeredocCommandDetails(command)?.formattedCommand;
+}
+
+function renderPythonHeredocSummary(
+  details: PythonHeredocCommandDetails,
+  args: unknown,
+  theme: ThemeLike,
+): string {
+  const timeout = getTimeout(args);
+  const timeoutSuffix = timeout ? theme.fg("muted", ` (timeout ${timeout}s)`) : "";
+  const lineSummary = `${details.bodyLineCount} ${pluralize(details.bodyLineCount, "line")}`;
+  const previewSuffix = details.previewLine ? ` ${theme.fg("dim", "·")} ${theme.fg("toolOutput", details.previewLine)}` : "";
+  const shellSuffix = details.shellLineCount > 0
+    ? ` ${theme.fg("dim", "·")} ${theme.fg("muted", `+${details.shellLineCount} shell ${pluralize(details.shellLineCount, "line")}`)}`
+    : "";
+
+  return `${theme.fg("toolTitle", theme.bold("$"))} ${theme.fg("warning", "◆")} ${theme.fg("customMessageLabel", theme.bold("python"))} ${theme.fg("accent", theme.bold("heredoc"))} ${theme.fg("muted", lineSummary)}${previewSuffix}${shellSuffix}${timeoutSuffix}`;
+}
+
+function renderPythonCodeLine(line: string, index: number, width: number, theme: ThemeLike): string {
+  const lineNumber = String(index + 1).padStart(width);
+  return `  ${theme.fg("muted", lineNumber)} ${theme.fg("dim", "│")} ${theme.fg("toolOutput", sanitizeAnsiForThemedOutput(line))}`;
+}
+
+function renderPythonHeredocExpandedLines(details: PythonHeredocCommandDetails, theme: ThemeLike): string[] {
+  const lines: string[] = [];
+
+  for (const item of details.items) {
+    if (item.kind === "shell") {
+      lines.push(`  ${theme.fg("muted", "$")} ${theme.fg("accent", sanitizeAnsiForThemedOutput(item.line.trim()))}`);
+      continue;
+    }
+
+    const { block } = item;
+    lines.push(`  ${theme.fg("muted", sanitizeAnsiForThemedOutput(block.headerLine.trim()))}`);
+    lines.push(...block.bodyLines.map((line, index) => renderPythonCodeLine(line, index, block.lineNumberWidth, theme)));
+    lines.push(`  ${theme.fg("muted", sanitizeAnsiForThemedOutput(block.delimiterLine.trim()))}`);
+  }
+
+  return lines;
+}
+
+function renderPythonHeredocBashCall(args: unknown, theme: ThemeLike, context?: ToolRenderContextLike): Text | undefined {
+  const command = getCommand(args);
+  if (!command) return undefined;
+
+  const details = getPythonHeredocCommandDetails(command);
+  if (!details) return undefined;
+
+  const text = context?.lastComponent instanceof Text ? context.lastComponent : new Text("", 0, 0);
+  const summary = renderPythonHeredocSummary(details, args, theme);
+  if (!context?.expanded) {
+    text.setText(summary);
+    return text;
+  }
+
+  text.setText([summary, ...renderPythonHeredocExpandedLines(details, theme)].join("\n"));
+  return text;
+}
+
 function isPwScriptToken(token: string): boolean {
   return (
     token === "$SKILL_DIR/scripts/pw.js" ||
@@ -1010,6 +1229,9 @@ function createAmpBashTool(): RuntimeToolLike {
       if (impeccableSummary) {
         return renderImpeccableSummaryCall(impeccableSummary, args, theme, context);
       }
+
+      const pythonHeredocCall = renderPythonHeredocBashCall(args, theme, context);
+      if (pythonHeredocCall) return pythonHeredocCall;
 
       return renderBashCall(args as BashArgs, theme, context);
     },

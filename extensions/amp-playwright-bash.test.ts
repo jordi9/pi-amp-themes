@@ -2,12 +2,53 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { expect, test } from "vitest";
 
-import {
+import ampPlaywrightBash, {
+  formatPythonHeredocCommand,
   summarizeImpeccableCommand,
   summarizeImpeccableResult,
   summarizePlaywrightCommand,
   tokenizeShellLike,
 } from "./amp-playwright-bash.js";
+
+type Handler = (event?: any, ctx?: any) => void | Promise<void>;
+
+function createHarness(tools: any[] = []) {
+  const handlers = new Map<string, Handler[]>();
+  const registeredTools = new Map<string, any>();
+  const pi = {
+    on(event: string, handler: Handler) {
+      handlers.set(event, [...(handlers.get(event) ?? []), handler]);
+    },
+    registerTool(tool: any) {
+      registeredTools.set(tool.name, tool);
+    },
+    getAllTools() {
+      return tools;
+    },
+  };
+
+  ampPlaywrightBash(pi as any);
+
+  return {
+    async emit(event: string, payload: any = {}, ctx: any = {}) {
+      for (const handler of handlers.get(event) ?? []) {
+        await handler(payload, ctx);
+      }
+    },
+    getTool(name: string) {
+      return registeredTools.get(name);
+    },
+  };
+}
+
+function render(component: unknown): string {
+  return (component as { render(width: number): string[] }).render(120).join("\n").trimEnd();
+}
+
+const theme = {
+  fg: (_color: string, text: string) => text,
+  bold: (text: string) => text,
+};
 
 test("loads before pi-tool-display so its bash override wins", () => {
   const packageJsonPath = fileURLToPath(new URL("../package.json", import.meta.url));
@@ -31,6 +72,68 @@ test("tokenizes semicolons outside quoted run-code snippets only", () => {
     "run-code",
     "async () => { await x(); await y(); }",
   ]);
+});
+
+test("pretty prints inline Python heredocs in bash calls", () => {
+  const command = `python3 - <<'PY'
+ from pathlib import Path
+ ok=True
+ for p in sorted(Path('.').glob('*/SKILL.md')):
+     print(p)
+PY
+git diff --check
+git status --short`;
+
+  expect(formatPythonHeredocCommand(command)).toBe(`python3 - <<'PY'
+  1 │ from pathlib import Path
+  2 │ ok=True
+  3 │ for p in sorted(Path('.').glob('*/SKILL.md')):
+  4 │     print(p)
+PY
+git diff --check
+git status --short`);
+});
+
+test("does not pretty print non-Python heredocs", () => {
+  expect(formatPythonHeredocCommand("cat <<'PY'\nhello\nPY")).toBeUndefined();
+});
+
+test("registered bash renderer collapses Python heredocs by default", async () => {
+  const harness = createHarness();
+  await harness.emit("session_start");
+  const bashTool = harness.getTool("bash");
+
+  const rendered = render(bashTool.renderCall(
+    {
+      command: "python3 - <<'PY'\nfrom pathlib import Path\nprint(Path('.').resolve())\nPY",
+      timeout: 10,
+    },
+    theme,
+    { executionStarted: false, isPartial: false, state: {}, toolCallId: "python-test" },
+  ));
+
+  expect(rendered).toBe("$ ◆ python heredoc 2 lines · from pathlib import Path (timeout 10s)");
+});
+
+test("registered bash renderer expands Python heredocs with a code gutter", async () => {
+  const harness = createHarness();
+  await harness.emit("session_start");
+  const bashTool = harness.getTool("bash");
+
+  const rendered = render(bashTool.renderCall(
+    {
+      command: "python3 - <<'PY'\nfrom pathlib import Path\nprint(Path('.').resolve())\nPY",
+      timeout: 10,
+    },
+    theme,
+    { executionStarted: false, expanded: true, isPartial: false, state: {}, toolCallId: "python-test" },
+  ));
+
+  expect(rendered).toContain("$ ◆ python heredoc 2 lines · from pathlib import Path (timeout 10s)");
+  expect(rendered).toContain("  python3 - <<'PY'");
+  expect(rendered).toContain("  1 │ from pathlib import Path");
+  expect(rendered).toContain("  2 │ print(Path('.').resolve())");
+  expect(rendered).toContain("  PY");
 });
 
 test("summarizes pi-playwright run-code screenshots", () => {
