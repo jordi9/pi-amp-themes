@@ -42,12 +42,15 @@ export const WORKING_ANIMATIONS = [
 export const DEFAULT_WORKING_ANIMATION = WORKING_ANIMATIONS[0];
 const CENTER_TEXT = "I HAD POTENTIAL";
 
+type FinishedStatus = "finished" | "cancelled";
+
 type WorkingState = {
   active: boolean;
   message: string;
   frame: string;
   elapsedMs: number | undefined;
   finishedElapsedMs: number | undefined;
+  finishedStatus: FinishedStatus;
 };
 
 type GitInfo = {
@@ -220,6 +223,19 @@ function getContextWarning(percent: number | null | undefined): { label: string;
   if (percent > 70) return { label: "dumber", color: "warning" };
   if (percent > 50) return { label: "dumb", color: "mdHeading" };
   return undefined;
+}
+
+function isCancelledAgentEnd(event: { messages?: readonly unknown[] }): boolean {
+  if (!Array.isArray(event.messages)) return false;
+
+  let lastAssistantStopReason: unknown;
+  for (const message of event.messages) {
+    if (typeof message !== "object" || message === null) continue;
+    const candidate = message as { role?: unknown; stopReason?: unknown };
+    if (candidate.role === "assistant") lastAssistantStopReason = candidate.stopReason;
+  }
+
+  return lastAssistantStopReason === "aborted";
 }
 
 function formatElapsed(ms: number): string {
@@ -518,7 +534,10 @@ class AmpEditor extends CustomEditor {
     const working = this.getWorkingState();
     if (!working.active) {
       if (working.finishedElapsedMs === undefined) return "";
-      return `${this.fg("success", "✓")} ${this.fg("text", "Finished")} ${this.fg("muted", "·")} ${this.fg("accent", formatElapsed(working.finishedElapsedMs))}`;
+      const status = working.finishedStatus === "cancelled"
+        ? { color: "warning" as const, icon: "×", label: "Cancelled" }
+        : { color: "success" as const, icon: "✓", label: "Finished" };
+      return `${this.fg(status.color, status.icon)} ${this.fg("text", status.label)} ${this.fg("muted", "·")} ${this.fg("accent", formatElapsed(working.finishedElapsedMs))}`;
     }
 
     const cancelHint = `${this.fg("accent", "Esc")}${this.fg("muted", " to cancel")}`;
@@ -697,6 +716,7 @@ export default function (pi: ExtensionAPI) {
   let workingFrameIndex = 0;
   let promptStartedAt: number | undefined;
   let finishedPromptElapsedMs: number | undefined;
+  let finishedPromptStatus: FinishedStatus = "finished";
   let copyPromptStatus: CopyPromptStatus | undefined;
   let workingTimer: ReturnType<typeof setInterval> | undefined;
   let finishedStatusTimer: ReturnType<typeof setTimeout> | undefined;
@@ -732,6 +752,7 @@ export default function (pi: ExtensionAPI) {
     stopFinishedStatusTimer();
     if (finishedPromptElapsedMs === undefined) return;
     finishedPromptElapsedMs = undefined;
+    finishedPromptStatus = "finished";
     requestRender();
   };
 
@@ -740,6 +761,7 @@ export default function (pi: ExtensionAPI) {
     finishedStatusTimer = setTimeout(() => {
       finishedStatusTimer = undefined;
       finishedPromptElapsedMs = undefined;
+      finishedPromptStatus = "finished";
       requestRender();
     }, FINISHED_STATUS_MS);
     finishedStatusTimer.unref?.();
@@ -870,6 +892,7 @@ export default function (pi: ExtensionAPI) {
         frame: getWorkingAnimationFrame(getActiveWorkingAnimation(), workingFrameIndex),
         elapsedMs: promptStartedAt === undefined ? undefined : Date.now() - promptStartedAt,
         finishedElapsedMs: finishedPromptElapsedMs,
+        finishedStatus: finishedPromptStatus,
       }), () => copyPromptStatus, openCommandPalette);
     });
 
@@ -939,9 +962,10 @@ export default function (pi: ExtensionAPI) {
     }
   });
 
-  pi.on("agent_end", (_event, _ctx) => {
+  pi.on("agent_end", (event, _ctx) => {
     isWorking = false;
     finishedPromptElapsedMs = promptStartedAt === undefined ? undefined : Date.now() - promptStartedAt;
+    finishedPromptStatus = isCancelledAgentEnd(event) ? "cancelled" : "finished";
     promptStartedAt = undefined;
     activeToolExecutions.clear();
     stopWorkingTimer();
@@ -955,6 +979,7 @@ export default function (pi: ExtensionAPI) {
     clearCopyPromptStatus();
     promptStartedAt = undefined;
     finishedPromptElapsedMs = undefined;
+    finishedPromptStatus = "finished";
     copyPromptStatus = undefined;
     workingAnimation = undefined;
     activeTui = undefined;

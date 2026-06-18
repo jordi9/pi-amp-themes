@@ -564,6 +564,70 @@ test("amp editor keeps finished elapsed time visible briefly after agent end", (
   }
 });
 
+test("amp editor renders cancelled elapsed time after aborted agent end", () => {
+  vi.useFakeTimers();
+  vi.setSystemTime(1_000);
+  const { pi, handlers } = createPiStub(() => "medium");
+
+  ampEditorExtension(pi);
+
+  let editorFactory:
+    | ((tui: unknown, theme: ThemeStub, keybindings: { matches(): boolean }) => { render(width: number): string[] })
+    | undefined;
+
+  const ctx = {
+    hasUI: true,
+    cwd: "/tmp",
+    model: {
+      id: "claude-sonnet-4-20250514",
+      contextWindow: 200000,
+      reasoning: true,
+    },
+    modelRegistry: { isUsingOAuth: () => false },
+    sessionManager: createSessionManager(),
+    getContextUsage: () => ({ percent: 12, contextWindow: 200000 }),
+    ui: {
+      theme: createThemeStub(),
+      setEditorComponent(factory: typeof editorFactory) {
+        editorFactory = factory;
+      },
+      setWorkingIndicator() {},
+      setWorkingMessage() {},
+      setWorkingVisible() {},
+      setFooter() {},
+    },
+  } as unknown as ExtensionContext;
+
+  try {
+    const sessionStart = expectDefined(handlers.get("session_start"), "session_start handler should be registered");
+    sessionStart({ type: "session_start", reason: "startup" }, ctx);
+
+    const beforeAgentStart = expectDefined(handlers.get("before_agent_start"), "before_agent_start handler should be registered");
+    beforeAgentStart({ type: "before_agent_start" }, ctx);
+
+    const createEditor = expectDefined(editorFactory, "editor factory should be registered");
+    const editor = createEditor(
+      { requestRender() {}, terminal: { rows: 24 } },
+      createThemeStub(),
+      { matches: () => false },
+    );
+
+    vi.setSystemTime(66_000);
+    const agentEnd = expectDefined(handlers.get("agent_end"), "agent_end handler should be registered");
+    agentEnd({
+      type: "agent_end",
+      messages: [{ role: "assistant", stopReason: "aborted" }],
+    }, ctx);
+
+    const rendered = editor.render(200).join("\n");
+    expect(rendered).toContain("Cancelled · 1m 5s");
+    expect(rendered).not.toContain("Finished");
+  } finally {
+    handlers.get("session_shutdown")?.({ type: "session_shutdown", reason: "quit" }, ctx);
+    vi.useRealTimers();
+  }
+});
+
 test("amp editor applies the theme text color to typed input", () => {
   const { pi, handlers } = createPiStub(() => "medium");
 
