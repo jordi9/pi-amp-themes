@@ -3,20 +3,24 @@ node = "24.14.1"
 
 [tasks.install]
 description = "Install dependencies"
-run = "npm install"
+run = "pnpm install"
 
 [tasks.typecheck]
 description = "Type-check extension sources"
-run = "npm run typecheck"
+run = "pnpm run typecheck"
+
+[tasks.test]
+description = "Run the Vitest regression suite"
+run = "pnpm test"
 
 [tasks.check]
 description = "Verify the Pi package loads without global extensions/themes"
-run = "npm run check"
+run = "pnpm run check"
 
 [tasks.pack-check]
 description = "Inspect npm package contents without publishing"
-run = "npm run pack:check"
+run = "pnpm run pack:check"
 
 [tasks.release-check]
 description = "Run all checks before publishing"
-depends = ["typecheck", "check", "pack-check"]
+depends = ["typecheck", "test", "check", "pack-check"]

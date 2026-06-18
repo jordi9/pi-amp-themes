@@ -34,11 +34,11 @@ If `npm:pi-tool-display` is installed separately, remove it. `amp-themes` alread
 ## Development
 
 ```bash
-npm install
-npm test
-npm run typecheck
-npm run check
-npm run pack:check
+pnpm install
+pnpm test
+pnpm run typecheck
+pnpm run check
+pnpm run pack:check
 ```
 
 For local Pi testing:
@@ -65,8 +65,8 @@ release-amp-themes
 At minimum:
 
 ```bash
-npm run release:check
-npm publish
+pnpm run release:check
+pnpm publish
 ```
 
 See `CHANGELOG.md` for release notes.

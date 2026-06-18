@@ -252,6 +252,6 @@ test("summarizes impeccable JSON results when collapsed", () => {
 });
 
 test("ignores unrelated bash commands", () => {
-  expect(summarizePlaywrightCommand("npm test")).toBeUndefined();
-  expect(summarizeImpeccableCommand("npm test")).toBeUndefined();
+  expect(summarizePlaywrightCommand("pnpm test")).toBeUndefined();
+  expect(summarizeImpeccableCommand("pnpm test")).toBeUndefined();
 });

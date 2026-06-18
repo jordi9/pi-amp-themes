@@ -2,6 +2,7 @@
   "name": "amp-themes",
   "version": "0.2.17",
   "description": "Amp-inspired Pi UI suite: theme, editor chrome, and compact tool display.",
+  "packageManager": "pnpm@10.33.2",
   "keywords": [
     "pi-package",
     "pi-theme",
@@ -25,8 +26,8 @@
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
     "check": "pi --no-extensions --no-themes -e . -p 'Reply with ok'",
-    "pack:check": "npm pack --dry-run",
-    "release:check": "npm run typecheck && npm test && npm run check && npm run pack:check"
+    "pack:check": "pnpm pack --dry-run",
+    "release:check": "pnpm run typecheck && pnpm test && pnpm run check && pnpm run pack:check"
   },
   "pi": {
     "extensions": [
