@@ -4,6 +4,7 @@ import {
   type ExtensionAPI,
 } from "@earendil-works/pi-coding-agent";
 import { Text, type Component } from "@earendil-works/pi-tui";
+import { decorateToolForDisplay } from "pi-tool-display/tool-display-api-consumer";
 
 type ThemeLike = {
   fg(color: string, text: string): string;
@@ -29,22 +30,11 @@ type RuntimeToolLike = Record<PropertyKey, unknown> & {
   renderShell?: "default" | "self";
 };
 
-type ToolDisplayApi = {
-  version: 1;
-  decorateTool<T extends RuntimeToolLike>(tool: T, adapter?: { kind?: "read" }): T;
-};
-
-type GlobalWithToolDisplayApi = typeof globalThis & {
-  [TOOL_DISPLAY_API_KEY]?: ToolDisplayApi;
-};
-
 type SkillDisplayMetadata = {
   name: string;
   filePath: string;
   baseDir?: string;
 };
-
-const TOOL_DISPLAY_API_KEY = Symbol.for("pi-tool-display.api.v1");
 
 // Pi exposes getAllTools() as metadata, not mutable runtime tool definitions.
 // This extension therefore owns the read override and delegates normal read UI
@@ -168,11 +158,6 @@ function renderSkillReadCall(label: string, args: unknown, theme: ThemeLike, con
   return text;
 }
 
-function getToolDisplayApi(): ToolDisplayApi | undefined {
-  const api = (globalThis as GlobalWithToolDisplayApi)[TOOL_DISPLAY_API_KEY];
-  return api?.version === 1 && typeof api.decorateTool === "function" ? api : undefined;
-}
-
 function createDisplayDecoratedReadFallback(bootstrapRead: ReadToolDefinition): RuntimeToolLike {
   const tool: RuntimeToolLike = {
     name: bootstrapRead.name,
@@ -181,18 +166,12 @@ function createDisplayDecoratedReadFallback(bootstrapRead: ReadToolDefinition): 
     parameters: bootstrapRead.parameters,
   };
 
-  try {
-    return getToolDisplayApi()?.decorateTool(tool, { kind: "read" }) ?? tool;
-  } catch {
-    return tool;
-  }
+  return decorateToolForDisplay(tool, { kind: "read" }, { suppressDecorateErrors: true }) as RuntimeToolLike;
 }
 
 function createAmpReadTool(getSkills: () => readonly SkillDisplayMetadata[]): ReadToolDefinition {
   const bootstrapRead = getReadDefinition(process.cwd());
   const displayFallback = createDisplayDecoratedReadFallback(bootstrapRead);
-  const fallbackRenderCall = displayFallback.renderCall ?? (bootstrapRead.renderCall as RenderCall | undefined);
-  const fallbackRenderResult = displayFallback.renderResult ?? (bootstrapRead.renderResult as RenderResult | undefined);
 
   return {
     ...bootstrapRead,
@@ -203,9 +182,11 @@ function createAmpReadTool(getSkills: () => readonly SkillDisplayMetadata[]): Re
     renderCall(args, theme, context) {
       const label = getSkillReadLabel(getReadPath(args), context?.cwd, getSkills());
       if (label) return renderSkillReadCall(label, args, theme, context);
+      const fallbackRenderCall = displayFallback.renderCall ?? (bootstrapRead.renderCall as RenderCall | undefined);
       return fallbackRenderCall?.(args, theme, context) ?? renderSkillReadCall("read", args, theme, context);
     },
     renderResult(result, options, theme, context) {
+      const fallbackRenderResult = displayFallback.renderResult ?? (bootstrapRead.renderResult as RenderResult | undefined);
       return fallbackRenderResult?.(result, options, theme, context) ?? new Text("", 0, 0);
     },
   };

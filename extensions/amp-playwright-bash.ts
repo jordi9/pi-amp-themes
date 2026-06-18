@@ -1,12 +1,15 @@
-import { basename } from "node:path";
+import { existsSync, readFileSync } from "node:fs";
+import { basename, join } from "node:path";
 import {
   createBashToolDefinition,
   type BashToolDetails,
+  type BashToolOptions,
   type ExtensionAPI,
   type ToolDefinition,
   type ToolRenderResultOptions,
 } from "@earendil-works/pi-coding-agent";
 import { Text } from "@earendil-works/pi-tui";
+import { resolvePiAgentDir } from "../node_modules/pi-tool-display/src/agent-dir.js";
 import { renderBashCall } from "../node_modules/pi-tool-display/src/bash-display.js";
 import { loadToolDisplayConfig } from "../node_modules/pi-tool-display/src/config-store.js";
 import type { ToolDisplayConfig } from "../node_modules/pi-tool-display/src/types.js";
@@ -50,6 +53,11 @@ type RuntimeToolLike = ToolDefinition<any, BashToolDetails | undefined, any> & {
   promptGuidelines?: string[];
 };
 
+type PiSettingsShellConfig = {
+  shellPath?: unknown;
+  shellCommandPrefix?: unknown;
+};
+
 type ToolInfoLike = {
   name?: string;
   sourceInfo?: {
@@ -67,10 +75,30 @@ function debugLog(message: string, data?: unknown): void {
   console.error(`[amp-playwright-bash] ${message}`, data === undefined ? "" : JSON.stringify(data));
 }
 
+function getStringSetting(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim().length > 0 ? value : undefined;
+}
+
+function loadBashToolOverrideOptions(): BashToolOptions {
+  const settingsPath = join(resolvePiAgentDir(), "settings.json");
+  if (!existsSync(settingsPath)) return {};
+
+  try {
+    const rawSettings = JSON.parse(readFileSync(settingsPath, "utf8")) as PiSettingsShellConfig;
+    return {
+      shellPath: getStringSetting(rawSettings.shellPath),
+      commandPrefix: getStringSetting(rawSettings.shellCommandPrefix),
+    };
+  } catch (error) {
+    debugLog("failed to read Pi shell settings", error instanceof Error ? error.message : String(error));
+    return {};
+  }
+}
+
 function getBashDefinition(cwd: string): ReturnType<typeof createBashToolDefinition> {
   let definition = bashDefinitions.get(cwd);
   if (!definition) {
-    definition = createBashToolDefinition(cwd);
+    definition = createBashToolDefinition(cwd, loadBashToolOverrideOptions());
     bashDefinitions.set(cwd, definition);
   }
   return definition;
