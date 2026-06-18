@@ -4,6 +4,7 @@ import { expect, test } from "vitest";
 
 import ampPlaywrightBash, {
   formatPythonHeredocCommand,
+  PYTHON_LOC_FLEXES,
   summarizeImpeccableCommand,
   summarizeImpeccableResult,
   summarizePlaywrightCommand,
@@ -49,6 +50,10 @@ const theme = {
   fg: (_color: string, text: string) => text,
   bold: (text: string) => text,
 };
+
+function expectLocFlex(rendered: string, locCount: number): void {
+  expect(PYTHON_LOC_FLEXES.some((flex) => rendered.includes(` · ${locCount} LOC ${flex}`))).toBe(true);
+}
 
 test("loads before pi-tool-display so its bash override wins", () => {
   const packageJsonPath = fileURLToPath(new URL("../package.json", import.meta.url));
@@ -112,7 +117,9 @@ test("registered bash renderer collapses Python heredocs by default", async () =
     { executionStarted: false, isPartial: false, state: {}, toolCallId: "python-test" },
   ));
 
-  expect(rendered).toBe("$ ◆ python heredoc 2 lines · from pathlib import Path (timeout 10s)");
+  expect(rendered).toContain("$ ◆ python heredoc · 2 LOC ");
+  expect(rendered).toContain(" · from pathlib import Path (timeout 10s)");
+  expectLocFlex(rendered, 2);
 });
 
 test("registered bash renderer expands Python heredocs with a code gutter", async () => {
@@ -129,11 +136,31 @@ test("registered bash renderer expands Python heredocs with a code gutter", asyn
     { executionStarted: false, expanded: true, isPartial: false, state: {}, toolCallId: "python-test" },
   ));
 
-  expect(rendered).toContain("$ ◆ python heredoc 2 lines · from pathlib import Path (timeout 10s)");
+  expect(rendered).toContain("$ ◆ python heredoc · 2 LOC ");
+  expect(rendered).toContain(" · from pathlib import Path (timeout 10s)");
+  expectLocFlex(rendered, 2);
   expect(rendered).toContain("  python3 - <<'PY'");
   expect(rendered).toContain("  1 │ from pathlib import Path");
   expect(rendered).toContain("  2 │ print(Path('.').resolve())");
   expect(rendered).toContain("  PY");
+});
+
+test("registered bash renderer does not count blank Python lines as LOC", async () => {
+  const harness = createHarness();
+  await harness.emit("session_start");
+  const bashTool = harness.getTool("bash");
+
+  const rendered = render(bashTool.renderCall(
+    {
+      command: "python3 - <<'PY'\n\nprint('real code')\n\nPY",
+    },
+    theme,
+    { executionStarted: false, isPartial: false, state: {}, toolCallId: "python-test" },
+  ));
+
+  expect(rendered).toContain("$ ◆ python heredoc · 1 LOC ");
+  expect(rendered).toContain(" · print('real code')");
+  expectLocFlex(rendered, 1);
 });
 
 test("summarizes pi-playwright run-code screenshots", () => {

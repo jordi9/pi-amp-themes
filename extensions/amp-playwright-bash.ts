@@ -200,9 +200,37 @@ type PythonHeredocCommandDetails = {
   bodyLineCount: number;
   formattedCommand: string;
   items: PythonHeredocDisplayItem[];
+  locCount: number;
   previewLine?: string;
   shellLineCount: number;
 };
+
+export const PYTHON_LOC_FLEXES = [
+  "glorious",
+  "LOC-flexing",
+  "metrics go brrr",
+  "velocity spreadsheet fed",
+  "shareholder value created",
+  "KPIs absolutely nourished",
+  "enterprise-grade typing",
+  "10x line economy",
+  "productivity theater activated",
+  "charts up only",
+] as const;
+
+function hashText(text: string): number {
+  let hash = 2166136261;
+  for (let index = 0; index < text.length; index += 1) {
+    hash ^= text.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return hash >>> 0;
+}
+
+function selectPythonLocFlex(command: string, context?: ToolRenderContextLike): string {
+  const seed = `${context?.toolCallId ?? ""}\0${command}`;
+  return PYTHON_LOC_FLEXES[hashText(seed) % PYTHON_LOC_FLEXES.length] ?? PYTHON_LOC_FLEXES[0];
+}
 
 function isPythonExecutableToken(token: string): boolean {
   const executable = basename(token.replace(/\\/g, "/"));
@@ -279,6 +307,7 @@ function getPythonHeredocCommandDetails(command: string): PythonHeredocCommandDe
   const formatted: string[] = [];
   const items: PythonHeredocDisplayItem[] = [];
   let bodyLineCount = 0;
+  let locCount = 0;
   let previewLine: string | undefined;
   let shellLineCount = 0;
 
@@ -322,6 +351,7 @@ function getPythonHeredocCommandDetails(command: string): PythonHeredocCommandDe
 
     items.push({ kind: "python", block });
     bodyLineCount += bodyLines.length;
+    locCount += bodyLines.filter((bodyLine) => bodyLine.trim().length > 0).length;
     previewLine ??= bodyLines.find((bodyLine) => bodyLine.trim().length > 0)?.trim();
     formatted.push(line, ...formatPythonBodyLines(bodyLines), delimiterLine);
     index = endIndex;
@@ -332,6 +362,7 @@ function getPythonHeredocCommandDetails(command: string): PythonHeredocCommandDe
         bodyLineCount,
         formattedCommand: formatted.join("\n"),
         items,
+        locCount,
         previewLine: previewLine ? truncateInline(previewLine, 48) : undefined,
         shellLineCount,
       }
@@ -346,16 +377,18 @@ function renderPythonHeredocSummary(
   details: PythonHeredocCommandDetails,
   args: unknown,
   theme: ThemeLike,
+  command: string,
+  context?: ToolRenderContextLike,
 ): string {
   const timeout = getTimeout(args);
   const timeoutSuffix = timeout ? theme.fg("muted", ` (timeout ${timeout}s)`) : "";
-  const lineSummary = `${details.bodyLineCount} ${pluralize(details.bodyLineCount, "line")}`;
+  const locFlex = `${details.locCount} LOC ${selectPythonLocFlex(command, context)}`;
   const previewSuffix = details.previewLine ? ` ${theme.fg("dim", "·")} ${theme.fg("toolOutput", details.previewLine)}` : "";
   const shellSuffix = details.shellLineCount > 0
     ? ` ${theme.fg("dim", "·")} ${theme.fg("muted", `+${details.shellLineCount} shell ${pluralize(details.shellLineCount, "line")}`)}`
     : "";
 
-  return `${theme.fg("toolTitle", theme.bold("$"))} ${theme.fg("warning", "◆")} ${theme.fg("customMessageLabel", theme.bold("python"))} ${theme.fg("accent", theme.bold("heredoc"))} ${theme.fg("muted", lineSummary)}${previewSuffix}${shellSuffix}${timeoutSuffix}`;
+  return `${theme.fg("toolTitle", theme.bold("$"))} ${theme.fg("warning", "◆")} ${theme.fg("customMessageLabel", theme.bold("python"))} ${theme.fg("accent", theme.bold("heredoc"))} ${theme.fg("dim", "·")} ${theme.fg("warning", locFlex)}${previewSuffix}${shellSuffix}${timeoutSuffix}`;
 }
 
 function renderPythonCodeLine(line: string, index: number, width: number, theme: ThemeLike): string {
@@ -389,7 +422,7 @@ function renderPythonHeredocBashCall(args: unknown, theme: ThemeLike, context?: 
   if (!details) return undefined;
 
   const text = context?.lastComponent instanceof Text ? context.lastComponent : new Text("", 0, 0);
-  const summary = renderPythonHeredocSummary(details, args, theme);
+  const summary = renderPythonHeredocSummary(details, args, theme, command, context);
   if (!context?.expanded) {
     text.setText(summary);
     return text;
