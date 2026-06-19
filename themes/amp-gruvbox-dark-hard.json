@@ -82,7 +82,7 @@
     "thinkingLow": "gruvbox-green",
     "thinkingMedium": "gruvbox-yellow",
     "thinkingHigh": "gruvbox-orange",
-    "thinkingXhigh": "gruvbox-red",
+    "thinkingXhigh": "gruvbox-yellow",
     "bashMode": "gruvbox-orange"
   },
   "export": {

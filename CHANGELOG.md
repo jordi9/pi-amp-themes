@@ -11,6 +11,8 @@
 - Show the active prompt elapsed time next to the Amp editor's `Esc to cancel` working hint, then keep the finished or cancelled elapsed time visible for 7 seconds.
 - Randomly pick an editor working-status animation per prompt, including the original `~ → ≈ → ≋` Amp wave and new Hermes-inspired spinner styles, with `/working-animation` and argument autocomplete for experimentation.
 - Add `Ctrl+Shift+X` for copying the current prompt editor text to the system clipboard with a transient editor status.
+- Keep the Amp editor border fixed to the theme's low-thinking color while the thinking level label continues to change color.
+- Use gold/yellow plus bold styling for the `xhigh` thinking label instead of red.
 - Add fun high-context labels in the editor with escalating colors: `dumb`, `dumber`, and `dumbest`.
 - Render assistant `txt` code fences containing HTTP endpoint lists as compact Markdown route tables.
 - Collapse `pi-playwright` bash wrapper calls into colorized Playwright action summaries while keeping compact bash output rendering.

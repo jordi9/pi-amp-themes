@@ -838,7 +838,7 @@ test("amp editor colors high context labels by severity", () => {
   expect(render()).toContain("[error]dumbest");
 });
 
-test("amp editor border follows the runtime border color function", () => {
+test("amp editor border always uses the thinkingLow color", () => {
   const { pi, handlers } = createPiStub(() => "medium");
 
   ampEditorExtension(pi);
@@ -863,7 +863,7 @@ test("amp editor border follows the runtime border color function", () => {
       sessionManager: createSessionManager(),
       getContextUsage: () => ({ percent: 12, contextWindow: 200000 }),
       ui: {
-        theme: createThemeStub(),
+        theme: createTaggedThemeStub(),
         setEditorComponent(factory: typeof editorFactory) {
           editorFactory = factory;
         },
@@ -877,13 +877,13 @@ test("amp editor border follows the runtime border color function", () => {
   const createEditor = expectDefined(editorFactory, "editor factory should be registered");
   const editor = createEditor(
     { requestRender() {}, terminal: { rows: 24 } },
-    createThemeStub(),
+    createTaggedThemeStub(),
     { matches: () => false },
   );
 
   editor.borderColor = (text: string) => `[border]${text}`;
 
-  expect(editor.render(80).join("\n")).toContain("[border]╭");
+  expect(editor.render(80).join("\n")).toContain("[thinkingLow]╭");
 });
 
 test("amp editor uses runtime thinking level after resume when session has no thinking entry", () => {

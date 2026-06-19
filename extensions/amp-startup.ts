@@ -18,21 +18,16 @@ const BRAND_WORDMARK = [
 ];
 
 const FACTORY_MARK = [
-  "⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿",
-  "⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿",
-  "⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⡇⠀⢸⣿⡇⠀⣿⣿",
-  "⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⡇⠀⢸⣿⡇⠀⣿⣿",
-  "⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⡇⠀⢸⣿⡇⠀⣿⣿",
-  "⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⢿⣿⣿⣿⣿⣿⡇⠀⢸⣿⡇⠀⣿⣿",
-  "⣿⣿⡟⠈⢿⣿⣿⣿⣿⠃⠙⣿⣿⣿⣿⡟⠈⠻⣿⣿⣿⣿⡇⠀⢸⣿⡇⠀⣿⣿",
-  "⣿⣿⡇⠀⠀⠹⣿⣿⣿⠀⠀⠈⢿⣿⣿⡇⠀⠀⠘⣿⣿⣿⡇⠀⢸⣿⡇⠀⣿⣿",
-  "⣿⣿⠁⠀⠀⠀⠈⢿⡟⠀⠀⠀⠀⠹⣿⠃⠀⠀⠀⠈⠻⣿⡇⠀⢸⣿⡇⠀⣿⣿",
-  "⣿⣿⠀⠀⠀⠀⠀⠀⠁⠀⠀⠀⠀⠀⠈⠀⠀⠀⠀⠀⠀⠉⠃⠀⠘⠛⠁⠀⣿⣿",
-  "⣿⣿⠀⢠⣶⣶⡆⠀⢰⣶⣶⡄⠀⣶⣶⣶⠀⠀⣶⣶⡆⠀⠀⠀⠀⠀⠀⠀⣿⣿",
-  "⣿⣿⠀⠈⠉⠉⠁⠀⠈⠉⠉⠁⠀⠉⠉⠉⠀⠀⠉⠉⠁⠀⠀⠀⠀⠀⠀⠀⣿⣿",
-  "⣿⣿⠀⢰⣶⣶⡆⠀⢰⣶⣶⡆⠀⣶⣶⣶⠀⠀⣶⣶⡆⠀⠀⠀⠀⠀⠀⠀⣿⣿",
-  "⣿⣿⠀⠀⠉⠉⠁⠀⠈⠉⠉⠀⠀⠈⠉⠁⠀⠀⠉⠉⠁⠀⠀⠀⠀⠀⠀⠀⣿⣿",
-  "⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿",
+  "       _.-o#&&#o-._",
+  "    .o\"  dMMMMMb  \"o.",
+  "  .d\"  J9J9MMMMMb  \"b.",
+  " d'  .MMMMMMMMMMb  `b",
+  ":M   `*MMMMMMMMMP   M:",
+  "MMb      `\"*#MP'   dM",
+  "`MMHo      MMM    oMM'",
+  " `?MM.    JMM'  .MM?'",
+  "   `&.        ./&'",
+  "      `--.##.--'",
 ];
 
 export type StartupSection = {
@@ -511,6 +506,10 @@ function joinStyled(parts: string[], separator: string, width: number): string {
   return truncateToWidth(joined, Math.max(0, width), "…");
 }
 
+function frameRuleLine(theme: ThemeLike, left: string, right: string, innerWidth: number): string {
+  return `${theme.fg("borderAccent", left)}${theme.fg("borderAccent", "─".repeat(innerWidth))}${theme.fg("borderAccent", right)}`;
+}
+
 function framedLine(theme: ThemeLike, content: string, innerWidth: number): string {
   return `${theme.fg("borderAccent", "│")}${padToWidth(content, innerWidth)}${theme.fg("borderAccent", "│")}`;
 }
@@ -605,8 +604,8 @@ export class AmpStartupHeader implements Component {
     if (!this.expanded) return this.renderCollapsedFramed(snapshot, boxWidth, width);
 
     const innerWidth = Math.max(1, boxWidth - 2);
-    const top = `${this.theme.fg("borderAccent", "╭")}${this.theme.fg("borderMuted", "─".repeat(innerWidth))}${this.theme.fg("borderAccent", "╮")}`;
-    const bottom = `${this.theme.fg("borderAccent", "╰")}${this.theme.fg("borderMuted", "─".repeat(innerWidth))}${this.theme.fg("borderAccent", "╯")}`;
+    const top = frameRuleLine(this.theme, "╭", "╮", innerWidth);
+    const bottom = frameRuleLine(this.theme, "╰", "╯", innerWidth);
 
     const body: string[] = [
       ...this.headingLines(boxWidth),
@@ -625,36 +624,15 @@ export class AmpStartupHeader implements Component {
 
   private renderCollapsedFramed(snapshot: StartupSnapshot, boxWidth: number, width: number): string[] {
     const innerWidth = Math.max(1, boxWidth - 2);
-    const contentWidth = Math.max(1, innerWidth - 4);
-    const top = `${this.theme.fg("borderAccent", "╭")}${this.theme.fg("borderMuted", "─".repeat(innerWidth))}${this.theme.fg("borderAccent", "╮")}`;
-    const bottom = `${this.theme.fg("borderAccent", "╰")}${this.theme.fg("borderMuted", "─".repeat(innerWidth))}${this.theme.fg("borderAccent", "╯")}`;
-    const model = compactModelId(snapshot.modelId, Math.max(8, Math.floor(contentWidth * 0.46)));
-    const session = snapshot.sessionName ? `session ${snapshot.sessionName}` : "fresh session";
-
-    const content = [
-      joinStyled([
-        this.theme.fg("text", model),
-        this.theme.fg("mdHeading", snapshot.project),
-      ], this.theme.fg("dim", " • "), contentWidth),
-      this.theme.fg("muted", truncateToWidth(snapshot.cwd, contentWidth, "…")),
-      joinStyled([
-        this.theme.fg(getThinkingColor(snapshot.thinkingLevel), snapshot.thinkingLevel),
-        this.theme.fg("dim", session),
-      ], this.theme.fg("dim", " • "), contentWidth),
-      "",
-      ...this.resourceSummaryLines(snapshot, contentWidth),
-      "",
-      this.hintLine(snapshot, contentWidth),
-    ];
+    const top = frameRuleLine(this.theme, "╭", "╮", innerWidth);
+    const bottom = frameRuleLine(this.theme, "╰", "╯", innerWidth);
 
     const body = [
       ...this.headingLines(boxWidth),
       centerToWidth(this.theme.fg("mdHeading", TAGLINE), boxWidth),
       "",
       top,
-      framedLine(this.theme, "", innerWidth),
-      ...content.map((line) => framedLine(this.theme, `  ${padToWidth(line, contentWidth)}  `, innerWidth)),
-      framedLine(this.theme, "", innerWidth),
+      ...this.compactDashboardLines(snapshot, innerWidth).map((line) => framedLine(this.theme, line, innerWidth)),
       bottom,
       "",
     ];
@@ -677,16 +655,29 @@ export class AmpStartupHeader implements Component {
 
   private dashboardLines(snapshot: StartupSnapshot, innerWidth: number): string[] {
     const factoryWidth = Math.max(...FACTORY_MARK.map((line) => visibleWidth(line)));
-    if (innerWidth >= factoryWidth + 38) return this.splitDashboardLines(snapshot, innerWidth, factoryWidth);
-    return this.stackedDashboardLines(snapshot, innerWidth);
+    const buildInfo = (width: number) => this.infoPanelLines(snapshot, width);
+    if (innerWidth >= factoryWidth + 38) return this.splitFactoryDashboardLines(snapshot, innerWidth, factoryWidth, buildInfo);
+    return this.stackedFactoryDashboardLines(snapshot, innerWidth, factoryWidth, buildInfo);
   }
 
-  private splitDashboardLines(snapshot: StartupSnapshot, innerWidth: number, factoryWidth: number): string[] {
+  private compactDashboardLines(snapshot: StartupSnapshot, innerWidth: number): string[] {
+    const factoryWidth = Math.max(...FACTORY_MARK.map((line) => visibleWidth(line)));
+    const buildInfo = (width: number) => this.compactInfoPanelLines(snapshot, width);
+    if (innerWidth >= factoryWidth + 32) return this.splitFactoryDashboardLines(snapshot, innerWidth, factoryWidth, buildInfo);
+    return this.stackedFactoryDashboardLines(snapshot, innerWidth, factoryWidth, buildInfo);
+  }
+
+  private splitFactoryDashboardLines(
+    snapshot: StartupSnapshot,
+    innerWidth: number,
+    factoryWidth: number,
+    buildInfoLines: (width: number) => string[],
+  ): string[] {
     const sidePadding = 2;
     const gapWidth = 4;
     const rightWidth = Math.max(1, innerWidth - (sidePadding * 2) - factoryWidth - gapWidth);
     const leftLines = this.factoryPanelLines(snapshot, factoryWidth);
-    const rightLines = this.infoPanelLines(snapshot, rightWidth);
+    const rightLines = buildInfoLines(rightWidth);
     const rowCount = Math.max(leftLines.length, rightLines.length);
     const lines = [""];
 
@@ -704,13 +695,20 @@ export class AmpStartupHeader implements Component {
     return lines;
   }
 
-  private stackedDashboardLines(snapshot: StartupSnapshot, innerWidth: number): string[] {
+  private stackedFactoryDashboardLines(
+    snapshot: StartupSnapshot,
+    innerWidth: number,
+    factoryWidth: number,
+    buildInfoLines: (width: number) => string[],
+  ): string[] {
     const padding = 2;
     const contentWidth = Math.max(1, innerWidth - (padding * 2));
+    const factoryLines = this.factoryPanelLines(snapshot, Math.min(factoryWidth, contentWidth))
+      .map((line) => centerToWidth(line, contentWidth));
     const content = [
-      this.metaLine(snapshot, contentWidth),
+      ...factoryLines,
       "",
-      ...this.infoPanelLines(snapshot, contentWidth),
+      ...buildInfoLines(contentWidth),
     ];
 
     return ["", ...content.map((line) => `${" ".repeat(padding)}${padToWidth(line, contentWidth)}${" ".repeat(padding)}`), ""];
@@ -753,14 +751,20 @@ export class AmpStartupHeader implements Component {
     return lines.map((line) => truncateToWidth(line, width, "…"));
   }
 
-  private resourceSummaryLines(snapshot: StartupSnapshot, width: number): string[] {
+  private compactInfoPanelLines(snapshot: StartupSnapshot, width: number): string[] {
     const tools = snapshot.tools.length > 0 ? snapshot.tools : snapshot.activeTools;
-    const lines: string[] = [];
-    if (snapshot.contextFilesKnown) lines.push(...this.resourceListLines("context", snapshot.contextFiles, width));
-    lines.push(...this.resourceListLines("skills", snapshot.skills, width));
-    lines.push(...this.resourceListLines("tools", tools, width));
-    lines.push(...this.resourceListLines("commands", snapshot.extensionCommands, width));
-    return lines;
+    const lines = [
+      centerToWidth(this.theme.fg("mdHeading", this.theme.bold(`pi v${VERSION} · ${snapshot.project}`)), width),
+      centerToWidth(this.summaryLine(snapshot, width), width),
+      "",
+    ];
+
+    if (snapshot.contextFilesKnown) lines.push(this.trimmedResourceLine("context", snapshot.contextFiles, width, 2));
+    lines.push(this.trimmedResourceLine("skills", snapshot.skills, width, 2));
+    lines.push(this.trimmedResourceLine("tools", tools, width, 4));
+    lines.push(this.trimmedResourceLine("commands", snapshot.extensionCommands, width, 2));
+    lines.push("", this.hintLine(snapshot, width));
+    return lines.map((line) => truncateToWidth(line, width, "…"));
   }
 
   private contextPanelLines(snapshot: StartupSnapshot, width: number): string[] {
@@ -804,6 +808,25 @@ export class AmpStartupHeader implements Component {
     ];
   }
 
+  private trimmedResourceLine(label: string, items: string[], width: number, maxItems: number): string {
+    const prefix = `${label} (${items.length}): `;
+    if (items.length === 0) return `${this.theme.fg("muted", prefix)}${this.theme.fg("text", "none")}`;
+
+    for (let count = Math.min(maxItems, items.length); count >= 0; count -= 1) {
+      const shown = items.slice(0, count);
+      const hidden = items.length - count;
+      const values = shown.length > 0 ? shown.join(", ") : `${items.length} total`;
+      const suffix = hidden > 0 && shown.length > 0 ? ` +${hidden}` : "";
+      const plain = `${prefix}${values}${suffix}`;
+
+      if (visibleWidth(plain) <= width || count === 0) {
+        return truncateToWidth(`${this.theme.fg("muted", prefix)}${this.theme.fg("text", values)}${this.theme.fg("dim", suffix)}`, width, "…");
+      }
+    }
+
+    return truncateToWidth(`${this.theme.fg("muted", prefix)}${this.theme.fg("text", `${items.length} total`)}`, width, "…");
+  }
+
   private resourceListLines(label: string, items: string[], width: number, countLabel = String(items.length)): string[] {
     const prefix = `${label} (${countLabel}): `;
     const styledPrefix = this.theme.fg("muted", prefix);
@@ -840,16 +863,6 @@ export class AmpStartupHeader implements Component {
   private sectionDetailLines(section: StartupSection | undefined, width: number): string[] {
     const lines = section?.lines.length ? section.lines : ["  none loaded"];
     return lines.map((line) => truncateToWidth(this.styleResourceDetailLine(line), width, "…"));
-  }
-
-  private metaLine(snapshot: StartupSnapshot, width: number): string {
-    const maxModelWidth = Math.max(6, Math.floor(width * 0.34));
-    const maxPathWidth = Math.max(6, Math.floor(width * 0.34));
-    return joinStyled([
-      `${this.theme.fg("muted", "model:")} ${this.theme.fg("text", compactModelId(snapshot.modelId, maxModelWidth))}`,
-      `${this.theme.fg("muted", "think:")} ${this.theme.fg(getThinkingColor(snapshot.thinkingLevel), snapshot.thinkingLevel)}`,
-      `${this.theme.fg("muted", "cwd:")} ${this.theme.fg("text", truncateToWidth(snapshot.cwd, maxPathWidth, "…"))}`,
-    ], this.theme.fg("dim", " · "), width);
   }
 
   private summaryLine(snapshot: StartupSnapshot, width: number): string {

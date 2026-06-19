@@ -524,7 +524,8 @@ class AmpEditor extends CustomEditor {
     const thinkingWidth = visibleWidth(thinkingLevel);
     const modelWidth = Math.max(1, maxWidth - thinkingWidth - 3);
     const model = this.fg("text", compactModelId(modelId, modelWidth));
-    const thinking = this.fg(this.getThinkingColor(), thinkingLevel);
+    const thinkingText = this.fg(this.getThinkingColor(), thinkingLevel);
+    const thinking = thinkingLevel === "xhigh" ? this.ctx.ui.theme.bold(thinkingText) : thinkingText;
     return ` ${model} ${this.fg("dim", "·")} ${thinking} `;
   }
 
@@ -645,6 +646,10 @@ class AmpEditor extends CustomEditor {
     return [`${leftPadding}${left}${gap}${right}${rightPadding}`];
   }
 
+  private promptBorderColor(text: string): string {
+    return this.fg("thinkingLow", text);
+  }
+
   private borderWithLabels(width: number, leftLabel: string, rightLabel: string): string {
     const innerWidth = Math.max(0, width - 2);
     const maxLeft = Math.max(0, Math.floor(innerWidth * 0.44));
@@ -653,11 +658,11 @@ class AmpEditor extends CustomEditor {
     const right = truncateToWidth(rightLabel, maxRight, "…");
     const used = visibleWidth(left) + visibleWidth(right);
     const fill = Math.max(0, innerWidth - used);
-    return this.borderColor("╭") + left + this.borderColor("─".repeat(fill)) + right + this.borderColor("╮");
+    return this.promptBorderColor("╭") + left + this.promptBorderColor("─".repeat(fill)) + right + this.promptBorderColor("╮");
   }
 
   private sideBorder(): string {
-    return this.borderColor("│");
+    return this.promptBorderColor("│");
   }
 
   private borderWithCenterThenPath(width: number, centerLabel: string, rightLabel: string): string {
@@ -667,7 +672,7 @@ class AmpEditor extends CustomEditor {
     if (innerWidth < minWidth) {
       const right = this.fg("muted", truncateToWidth(rightLabel.trim(), Math.max(0, innerWidth - 2), "…"));
       const fill = Math.max(0, innerWidth - visibleWidth(right));
-      return this.borderColor("╰") + this.borderColor("─".repeat(fill)) + right + this.borderColor("╯");
+      return this.promptBorderColor("╰") + this.promptBorderColor("─".repeat(fill)) + right + this.promptBorderColor("╯");
     }
 
     const centerTrunc = truncateToWidth(centerLabel, Math.max(0, Math.floor(innerWidth * 0.3)), "…");
@@ -690,11 +695,11 @@ class AmpEditor extends CustomEditor {
     const leftDashes = Math.floor(totalDashes / 2);
     const rightDashes = totalDashes - leftDashes;
 
-    const leftD = this.borderColor("─".repeat(leftDashes));
-    const rightD = this.borderColor("─".repeat(rightDashes));
+    const leftD = this.promptBorderColor("─".repeat(leftDashes));
+    const rightD = this.promptBorderColor("─".repeat(rightDashes));
 
     return (
-      this.borderColor("╰") +
+      this.promptBorderColor("╰") +
       leftD +
       " " +
       centerText +
@@ -703,7 +708,7 @@ class AmpEditor extends CustomEditor {
       " " +
       right +
       " " +
-      this.borderColor("╯")
+      this.promptBorderColor("╯")
     );
   }
 
@@ -711,7 +716,7 @@ class AmpEditor extends CustomEditor {
     const innerWidth = Math.max(0, width - 2);
     const right = this.fg("muted", truncateToWidth(label, Math.max(0, innerWidth - 2), "…"));
     const fill = Math.max(0, innerWidth - visibleWidth(right));
-    return this.borderColor("╰") + this.borderColor("─".repeat(fill)) + right + this.borderColor("╯");
+    return this.promptBorderColor("╰") + this.promptBorderColor("─".repeat(fill)) + right + this.promptBorderColor("╯");
   }
 }
 

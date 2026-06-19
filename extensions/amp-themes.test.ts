@@ -215,7 +215,7 @@ function expectRosePineColorMapping(theme: ThemeFile, prefix: string): void {
     thinkingLow: `${prefix}-foam`,
     thinkingMedium: `${prefix}-gold`,
     thinkingHigh: `${prefix}-rose`,
-    thinkingXhigh: `${prefix}-love`,
+    thinkingXhigh: `${prefix}-gold`,
     bashMode: `${prefix}-gold`,
   });
 }
@@ -273,7 +273,7 @@ test("amp-nebula-moon blends Rosé Pine Moon, Tokyo Night Moon, and Catppuccin M
     syntaxNumber: "nebula-cat-peach",
     thinkingLow: "nebula-cat-teal",
     thinkingHigh: "nebula-tokyo-purple",
-    thinkingXhigh: "nebula-amp-red"
+    thinkingXhigh: "nebula-tokyo-yellow"
   });
 
   for (const roleName of Object.keys(theme.vars ?? {})) {
@@ -347,7 +347,7 @@ test("amp-gruvbox-dark-hard maps Pi tokens to Gruvbox roles", () => {
     thinkingLow: "gruvbox-green",
     thinkingMedium: "gruvbox-yellow",
     thinkingHigh: "gruvbox-orange",
-    thinkingXhigh: "gruvbox-red",
+    thinkingXhigh: "gruvbox-yellow",
     bashMode: "gruvbox-orange",
   });
 });
