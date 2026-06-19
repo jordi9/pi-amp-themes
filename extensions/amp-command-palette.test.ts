@@ -54,6 +54,11 @@ function pickPaletteItem(item: CommandPaletteItem, key: "tab" | "enter"): Comman
   return result;
 }
 
+async function flushPromises(): Promise<void> {
+  await Promise.resolve();
+  await Promise.resolve();
+}
+
 function createAmpEditor(paletteResult: CommandPaletteResult): AmpEditorLike {
   const handlers = new Map<string, (event: unknown, ctx: ExtensionContext) => void>();
   const pi = {
@@ -128,6 +133,18 @@ test("command palette renders multiline descriptions as one terminal row", () =>
   expect(rendered.join("\n")).toContain("Delegate work. Continue safely.");
 });
 
+test("command palette caps command column on wide terminals", () => {
+  const overlay = createOverlay([
+    { name: "settings", source: "builtin", description: "Open settings menu" },
+  ]);
+
+  const row = overlay.render(180).map(stripAnsi).find((line) => line.includes("settings"));
+  const gap = row?.match(/settings( +)Open settings/)?.[1] ?? "";
+
+  expect(gap.length).toBeGreaterThan(0);
+  expect(gap.length).toBeLessThanOrEqual(32);
+});
+
 test.each([
   [{ name: "settings", source: "builtin" }, "submit"],
   [{ name: "btw:new", source: "extension" }, "submit"],
@@ -145,6 +162,48 @@ test.each([
   { name: "component", source: "prompt" },
 ] satisfies CommandPaletteItem[])("command palette tab always inserts %s", (item) => {
   expect(pickPaletteItem(item, "tab")).toEqual({ command: item.name, action: "insert" });
+});
+
+test("command palette selects command arguments before submitting", async () => {
+  let result: CommandPaletteResult | null | undefined;
+  const overlay = new CommandPaletteOverlay(
+    [{ name: "impeccable", source: "extension" }],
+    "",
+    { requestRender() {} } as never,
+    createThemeStub() as never,
+    createPaletteKeybindings() as never,
+    (value) => { result = value; },
+    async () => [{ value: "live", label: "live", description: "Run live mode" }],
+  );
+
+  overlay.handleInput("enter");
+  await flushPromises();
+
+  expect(result).toBeUndefined();
+  expect(overlay.render(80).map(stripAnsi).join("\n")).toContain("/impeccable");
+  expect(overlay.render(80).map(stripAnsi).join("\n")).toContain("live");
+
+  overlay.handleInput("enter");
+
+  expect(result).toEqual({ command: "impeccable live", action: "submit" });
+});
+
+test("command palette falls back to submitting commands without arguments", async () => {
+  let result: CommandPaletteResult | null | undefined;
+  const overlay = new CommandPaletteOverlay(
+    [{ name: "settings", source: "builtin" }],
+    "",
+    { requestRender() {} } as never,
+    createThemeStub() as never,
+    createPaletteKeybindings() as never,
+    (value) => { result = value; },
+    async () => null,
+  );
+
+  overlay.handleInput("enter");
+  await flushPromises();
+
+  expect(result).toEqual({ command: "settings", action: "submit" });
 });
 
 test("submitting a command from the palette matches native slash completion", async () => {

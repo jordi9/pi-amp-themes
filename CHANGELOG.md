@@ -16,6 +16,8 @@
 - Collapse `pi-playwright` bash wrapper calls into colorized Playwright action summaries while keeping compact bash output rendering.
 - Render `impeccable` skill live-mode bash calls and collapsed JSON results as compact action summaries.
 - Render Pi extension statuses inside the Amp editor status row so pluggable live indicators like `pi-impeccable` do not create a separate footer line.
+- Add an Amp command-arguments palette so slash-command sub-options stay in the overlay instead of Pi's footer selector.
+- Tighten wide command-palette columns so descriptions start closer to command names.
 
 ## 0.2.17
 

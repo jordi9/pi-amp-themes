@@ -1,6 +1,6 @@
 import { CustomEditor, type ExtensionAPI, type ExtensionContext, type ReadonlyFooterDataProvider, type ThemeColor } from "@earendil-works/pi-coding-agent";
-import { truncateToWidth, visibleWidth, type AutocompleteItem, type Component } from "@earendil-works/pi-tui";
-import { BUILTIN_COMMAND_PALETTE_ITEMS, CommandPaletteOverlay, type CommandPaletteItem, type CommandPaletteResult, stripAnsi } from "./amp-command-palette.js";
+import { truncateToWidth, visibleWidth, type AutocompleteItem, type AutocompleteProvider, type Component } from "@earendil-works/pi-tui";
+import { BUILTIN_COMMAND_PALETTE_ITEMS, CommandPaletteOverlay, type CommandPaletteArgumentItem, type CommandPaletteItem, type CommandPaletteResult, stripAnsi } from "./amp-command-palette.js";
 import { execFileSync, spawnSync } from "node:child_process";
 import { homedir } from "node:os";
 import { relative } from "node:path";
@@ -738,6 +738,7 @@ export default function (pi: ExtensionAPI) {
   let activeCtx: ExtensionContext | undefined;
   let activeTui: { requestRender(): void } | undefined;
   let activeFooterData: ReadonlyFooterDataProvider | undefined;
+  let activeAutocompleteProvider: AutocompleteProvider | undefined;
   let commandPaletteOpen = false;
   let isWorking = false;
   let workingMessage = WORKING_WAITING;
@@ -835,6 +836,20 @@ export default function (pi: ExtensionAPI) {
     requestRender();
   };
 
+  const getCommandArgumentItems = async (command: string, prefix: string): Promise<CommandPaletteArgumentItem[] | null> => {
+    const provider = activeAutocompleteProvider;
+    if (!provider) return null;
+
+    const line = `/${command} ${prefix}`;
+    const suggestions = await provider.getSuggestions([line], 0, line.length, { signal: new AbortController().signal });
+    if (!suggestions?.items.length) return null;
+    return suggestions.items.map((item) => ({
+      value: item.value,
+      label: item.label,
+      description: item.description,
+    }));
+  };
+
   const openCommandPalette = (initialQuery = "", onSelect: (result: CommandPaletteResult) => void) => {
     const ctx = activeCtx;
     if (!ctx?.hasUI || commandPaletteOpen) return;
@@ -848,6 +863,7 @@ export default function (pi: ExtensionAPI) {
         theme,
         keybindings,
         done,
+        getCommandArgumentItems,
       ),
       {
         overlay: true,
@@ -913,6 +929,11 @@ export default function (pi: ExtensionAPI) {
 
     activeCtx = ctx;
     activeThinkingLevel = pi.getThinkingLevel();
+
+    (ctx.ui as typeof ctx.ui & { addAutocompleteProvider?: (factory: (current: AutocompleteProvider) => AutocompleteProvider) => void }).addAutocompleteProvider?.((current) => {
+      activeAutocompleteProvider = current;
+      return current;
+    });
 
     ctx.ui.setEditorComponent((tui, theme, keybindings) => {
       activeTui = tui;

@@ -18,6 +18,21 @@ export interface CommandPaletteResult {
   action: "insert" | "submit";
 }
 
+export interface CommandPaletteArgumentItem {
+  value: string;
+  label: string;
+  description?: string;
+}
+
+type GetArgumentCompletions = (command: string, prefix: string) => Promise<CommandPaletteArgumentItem[] | null>;
+
+type PaletteRenderItem = {
+  name: string;
+  description?: string;
+  source?: string;
+  value?: string;
+};
+
 export const BUILTIN_COMMAND_PALETTE_ITEMS: CommandPaletteItem[] = [
   { name: "settings", description: "Open settings menu", source: "builtin" },
   { name: "model", description: "Select model", source: "builtin" },
@@ -56,6 +71,10 @@ export class CommandPaletteOverlay implements Component {
   private query: string;
   private selectedIndex = 0;
   private scrollOffset = 0;
+  private argumentCommand: CommandPaletteItem | undefined;
+  private argumentItems: CommandPaletteArgumentItem[] = [];
+  private argumentLoading = false;
+  private argumentRequestId = 0;
 
   constructor(
     private readonly items: CommandPaletteItem[],
@@ -64,6 +83,7 @@ export class CommandPaletteOverlay implements Component {
     private readonly theme: Theme,
     private readonly keybindings: KeybindingsManager,
     private readonly done: (result: CommandPaletteResult | null) => void,
+    private readonly getArgumentCompletions?: GetArgumentCompletions,
   ) {
     this.query = initialQuery.replace(/^\//, "");
   }
@@ -71,7 +91,7 @@ export class CommandPaletteOverlay implements Component {
   invalidate(): void {}
 
   handleInput(data: string): void {
-    const filtered = this.getFilteredItems();
+    const rows = this.getRows();
 
     if (this.keybindings.matches(data, "tui.select.cancel") || matchesKey(data, Key.escape)) {
       this.done(null);
@@ -79,14 +99,14 @@ export class CommandPaletteOverlay implements Component {
     }
 
     if (this.keybindings.matches(data, "tui.select.up")) {
-      this.selectedIndex = filtered.length === 0 ? 0 : Math.max(0, this.selectedIndex - 1);
+      this.selectedIndex = rows.length === 0 ? 0 : Math.max(0, this.selectedIndex - 1);
       this.ensureSelectionVisible();
       this.tui.requestRender();
       return;
     }
 
     if (this.keybindings.matches(data, "tui.select.down")) {
-      this.selectedIndex = filtered.length === 0 ? 0 : Math.min(filtered.length - 1, this.selectedIndex + 1);
+      this.selectedIndex = rows.length === 0 ? 0 : Math.min(rows.length - 1, this.selectedIndex + 1);
       this.ensureSelectionVisible();
       this.tui.requestRender();
       return;
@@ -100,46 +120,70 @@ export class CommandPaletteOverlay implements Component {
     }
 
     if (this.keybindings.matches(data, "tui.select.pageDown")) {
-      this.selectedIndex = filtered.length === 0 ? 0 : Math.min(filtered.length - 1, this.selectedIndex + MAX_ROWS);
+      this.selectedIndex = rows.length === 0 ? 0 : Math.min(rows.length - 1, this.selectedIndex + MAX_ROWS);
       this.ensureSelectionVisible();
       this.tui.requestRender();
       return;
     }
 
     if (this.keybindings.matches(data, "tui.input.tab") || matchesKey(data, Key.tab)) {
-      const selected = filtered[this.selectedIndex];
+      if (this.argumentCommand) {
+        if (this.argumentLoading) return;
+        this.finishArgument("insert", rows[this.selectedIndex]);
+        return;
+      }
+
+      const selected = this.getFilteredItems()[this.selectedIndex];
       this.done(selected ? { command: selected.name, action: "insert" } : null);
       return;
     }
 
     if (this.keybindings.matches(data, "tui.select.confirm")) {
-      const selected = filtered[this.selectedIndex];
-      this.done(selected ? { command: selected.name, action: getDefaultCommandAction(selected) } : null);
+      if (this.argumentCommand) {
+        if (this.argumentLoading) return;
+        this.finishArgument("submit", rows[this.selectedIndex]);
+        return;
+      }
+
+      const selected = this.getFilteredItems()[this.selectedIndex];
+      if (!selected) {
+        this.done(null);
+        return;
+      }
+
+      void this.submitOrOpenArguments(selected);
       return;
     }
 
     if (isClearQueryKey(data, this.keybindings)) {
       this.query = "";
-      this.selectedIndex = 0;
-      this.scrollOffset = 0;
-      this.tui.requestRender();
+      this.resetSelection();
+      this.refreshArgumentItems(false);
       return;
     }
 
     if (this.keybindings.matches(data, "tui.editor.deleteCharBackward") || matchesKey(data, Key.backspace)) {
+      if (this.argumentCommand && this.query.length === 0) {
+        this.query = this.argumentCommand.name;
+        this.argumentCommand = undefined;
+        this.argumentItems = [];
+        this.argumentLoading = false;
+        this.resetSelection();
+        this.tui.requestRender();
+        return;
+      }
+
       this.query = this.query.slice(0, -1);
-      this.selectedIndex = 0;
-      this.scrollOffset = 0;
-      this.tui.requestRender();
+      this.resetSelection();
+      this.refreshArgumentItems(false);
       return;
     }
 
     const printable = getPrintableInput(data);
     if (printable) {
       this.query += printable;
-      this.selectedIndex = 0;
-      this.scrollOffset = 0;
-      this.tui.requestRender();
+      this.resetSelection();
+      this.refreshArgumentItems(false);
     }
   }
 
@@ -147,23 +191,103 @@ export class CommandPaletteOverlay implements Component {
     const boxWidth = Math.max(MIN_WIDTH, width);
     const innerWidth = Math.max(1, boxWidth - 2);
     const contentWidth = Math.max(1, innerWidth - SIDE_PADDING * 2);
-    const filtered = this.getFilteredItems();
-    this.selectedIndex = filtered.length === 0 ? 0 : Math.min(this.selectedIndex, filtered.length - 1);
+    const items = this.getRows();
+    this.selectedIndex = items.length === 0 ? 0 : Math.min(this.selectedIndex, items.length - 1);
     this.ensureSelectionVisible();
 
-    const visibleItems = filtered.slice(this.scrollOffset, this.scrollOffset + MAX_ROWS);
-    const rows = visibleItems.length > 0
-      ? visibleItems.map((item, index) => this.renderItem(item, this.scrollOffset + index === this.selectedIndex, contentWidth))
-      : [this.fg("warning", "No commands match")];
+    const visibleItems = items.slice(this.scrollOffset, this.scrollOffset + MAX_ROWS);
+    const rows = this.argumentLoading
+      ? [this.fg("dim", "Loading options…")]
+      : visibleItems.length > 0
+        ? visibleItems.map((item, index) => this.renderItem(item, this.scrollOffset + index === this.selectedIndex, contentWidth))
+        : [this.fg("warning", this.argumentCommand ? "No options match" : "No commands match")];
 
     return [
       topBorder(boxWidth, this.theme),
       wrapContent(this.renderInput(contentWidth), boxWidth, this.theme),
       wrapContent("", boxWidth, this.theme),
       ...rows.map((row) => wrapContent(row, boxWidth, this.theme)),
-      wrapContent(this.renderCount(filtered.length, contentWidth), boxWidth, this.theme),
+      wrapContent(this.renderCount(items.length, contentWidth), boxWidth, this.theme),
       bottomBorder(boxWidth, this.theme),
     ];
+  }
+
+  private resetSelection(): void {
+    this.selectedIndex = 0;
+    this.scrollOffset = 0;
+  }
+
+  private getRows(): PaletteRenderItem[] {
+    if (!this.argumentCommand) return this.getFilteredItems();
+    return dedupeArgumentItems(this.argumentItems).map((item) => ({
+      name: item.label || item.value,
+      value: item.value,
+      description: item.description,
+      source: this.argumentCommand?.name,
+    }));
+  }
+
+  private async submitOrOpenArguments(selected: CommandPaletteItem): Promise<void> {
+    const action = getDefaultCommandAction(selected);
+    if (action === "insert" || !this.getArgumentCompletions) {
+      this.done({ command: selected.name, action });
+      return;
+    }
+
+    this.argumentCommand = selected;
+    this.argumentItems = [];
+    this.argumentLoading = true;
+    this.query = "";
+    this.resetSelection();
+    this.tui.requestRender();
+    this.refreshArgumentItems(true);
+  }
+
+  private refreshArgumentItems(fallbackToCommand: boolean): void {
+    if (!this.argumentCommand || !this.getArgumentCompletions) {
+      this.tui.requestRender();
+      return;
+    }
+
+    const command = this.argumentCommand;
+    const prefix = this.query;
+    const requestId = ++this.argumentRequestId;
+    this.argumentLoading = true;
+    this.tui.requestRender();
+
+    this.getArgumentCompletions(command.name, prefix).then((items) => {
+      if (requestId !== this.argumentRequestId || this.argumentCommand !== command) return;
+      const nextItems = dedupeArgumentItems(items ?? []);
+      if (nextItems.length === 0 && fallbackToCommand) {
+        this.done({ command: command.name, action: getDefaultCommandAction(command) });
+        return;
+      }
+
+      this.argumentItems = nextItems;
+      this.argumentLoading = false;
+      this.resetSelection();
+      this.tui.requestRender();
+    }).catch(() => {
+      if (requestId !== this.argumentRequestId || this.argumentCommand !== command) return;
+      if (fallbackToCommand) {
+        this.done({ command: command.name, action: getDefaultCommandAction(command) });
+        return;
+      }
+
+      this.argumentItems = [];
+      this.argumentLoading = false;
+      this.resetSelection();
+      this.tui.requestRender();
+    });
+  }
+
+  private finishArgument(action: CommandPaletteResult["action"], selected: PaletteRenderItem | undefined): void {
+    const command = this.argumentCommand;
+    if (!command) return;
+
+    const value = selected?.value ?? this.query.trim();
+    const fullCommand = value ? `${command.name} ${value}` : command.name;
+    this.done({ command: fullCommand, action });
   }
 
   private ensureSelectionVisible(): void {
@@ -189,14 +313,15 @@ export class CommandPaletteOverlay implements Component {
 
   private renderInput(width: number): string {
     const prompt = this.fg("dim", "> ");
-    const text = this.fg("text", this.query);
+    const value = this.argumentCommand ? `/${this.argumentCommand.name} ${this.query}` : this.query;
+    const text = this.fg("text", value);
     return truncateToWidth(prompt + text, width, "…", true);
   }
 
-  private renderItem(item: CommandPaletteItem, selected: boolean, width: number): string {
+  private renderItem(item: PaletteRenderItem, selected: boolean, width: number): string {
     const sourceWidth = 12;
-    const descriptionWidth = Math.max(0, Math.floor(width * 0.45));
-    const nameWidth = Math.max(8, width - sourceWidth - descriptionWidth - 4);
+    const nameWidth = Math.min(32, Math.max(8, Math.floor(width * 0.25)));
+    const descriptionWidth = Math.max(0, width - sourceWidth - nameWidth - 4);
     const marker = selected ? this.fg("accent", "→ ") : "  ";
     const sourceText = item.source ? normalizeToSingleLine(item.source) : "";
     const nameText = normalizeToSingleLine(item.name);
@@ -231,6 +356,17 @@ function dedupeItems(items: CommandPaletteItem[]): CommandPaletteItem[] {
   for (const item of items) {
     if (seen.has(item.name)) continue;
     seen.add(item.name);
+    result.push(item);
+  }
+  return result;
+}
+
+function dedupeArgumentItems(items: CommandPaletteArgumentItem[]): CommandPaletteArgumentItem[] {
+  const seen = new Set<string>();
+  const result: CommandPaletteArgumentItem[] = [];
+  for (const item of items) {
+    if (seen.has(item.value)) continue;
+    seen.add(item.value);
     result.push(item);
   }
   return result;
