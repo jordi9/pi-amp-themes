@@ -669,9 +669,9 @@ test("amp editor applies the theme text color to typed input", () => {
     createTaggedThemeStub(),
     { matches: () => false },
   );
-  editor.setText("为啥老是报错？");
+  editor.setText("why does this keep failing?");
 
-  expect(editor.render(100).join("\n")).toContain("[text] 为啥老是报错？");
+  expect(editor.render(100).join("\n")).toContain("│ [text]why does this keep failing?");
 });
 
 test("amp editor uses latest context and cost after reload", () => {

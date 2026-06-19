@@ -4,6 +4,7 @@ import { expect, test } from "vitest";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 
 import ampEditorExtension, {
+  formatExtensionStatuses,
   getWorkingAnimationFrame,
   pickWorkingAnimation,
   WORKING_ANIMATIONS,
@@ -78,6 +79,15 @@ test("working-animation command exposes argument completions", () => {
 
   expect(command.getArgumentCompletions?.("amp")?.map((item) => item.value)).toEqual(["amp-wave"]);
   expect(command.getArgumentCompletions?.("")?.map((item) => item.value)).toContain("random");
+});
+
+test("formats extension statuses for the Amp editor row", () => {
+  const statuses = new Map([
+    ["z-live", "  live\npolling  "],
+    ["a-impeccable", "● impeccable\tlive"],
+  ]);
+
+  expect(formatExtensionStatuses(statuses)).toBe("● impeccable live live polling");
 });
 
 test("registers copy current prompt shortcut", () => {

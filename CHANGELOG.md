@@ -15,6 +15,7 @@
 - Render assistant `txt` code fences containing HTTP endpoint lists as compact Markdown route tables.
 - Collapse `pi-playwright` bash wrapper calls into colorized Playwright action summaries while keeping compact bash output rendering.
 - Render `impeccable` skill live-mode bash calls and collapsed JSON results as compact action summaries.
+- Render Pi extension statuses inside the Amp editor status row so pluggable live indicators like `pi-impeccable` do not create a separate footer line.
 
 ## 0.2.17
 

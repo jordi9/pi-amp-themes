@@ -1,11 +1,12 @@
-import { CustomEditor, type ExtensionAPI, type ExtensionContext, type ThemeColor } from "@earendil-works/pi-coding-agent";
-import { truncateToWidth, visibleWidth, type AutocompleteItem } from "@earendil-works/pi-tui";
+import { CustomEditor, type ExtensionAPI, type ExtensionContext, type ReadonlyFooterDataProvider, type ThemeColor } from "@earendil-works/pi-coding-agent";
+import { truncateToWidth, visibleWidth, type AutocompleteItem, type Component } from "@earendil-works/pi-tui";
 import { BUILTIN_COMMAND_PALETTE_ITEMS, CommandPaletteOverlay, type CommandPaletteItem, type CommandPaletteResult, stripAnsi } from "./amp-command-palette.js";
 import { execFileSync, spawnSync } from "node:child_process";
 import { homedir } from "node:os";
 import { relative } from "node:path";
 
 const MIN_BODY_LINES = 2;
+const EDITOR_TEXT_LEFT_INSET = 1;
 const GIT_CACHE_MS = 2000;
 const STATUS_LEFT_INSET = 1;
 const STATUS_RIGHT_INSET = 1;
@@ -296,6 +297,22 @@ function joinStatusLabels(parts: string[], separator: string): string {
   return parts.filter(Boolean).join(separator);
 }
 
+export function formatExtensionStatuses(statuses: ReadonlyMap<string, string>): string {
+  return Array.from(statuses.entries())
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([, text]) => text.replace(/[\r\n\t]/g, " ").replace(/ +/g, " ").trim())
+    .filter(Boolean)
+    .join(" ");
+}
+
+class EmptyFooter implements Component {
+  render(): string[] {
+    return [];
+  }
+
+  invalidate(): void {}
+}
+
 function safeRandomUnit(random: () => number): number {
   const value = random();
   if (!Number.isFinite(value)) return 0;
@@ -376,10 +393,11 @@ class AmpEditor extends CustomEditor {
     private readonly getCtx: () => ExtensionContext,
     private readonly getThinkingLevel: () => string,
     private readonly getWorkingState: () => WorkingState,
+    private readonly getExtensionStatus: () => string,
     private readonly getCopyPromptStatus: () => CopyPromptStatus | undefined,
     private readonly openCommandPalette: (initialQuery: string | undefined, onSelect: (result: CommandPaletteResult) => void) => void,
   ) {
-    super(tui, theme, keybindings, { paddingX: 1 });
+    super(tui, theme, keybindings, { paddingX: 0 });
   }
 
   private get ctx(): ExtensionContext {
@@ -421,23 +439,26 @@ class AmpEditor extends CustomEditor {
     if (width < 12) return super.render(width);
 
     const innerWidth = Math.max(1, width - 2);
-    const base = super.render(innerWidth);
+    const editorWidth = Math.max(1, innerWidth - EDITOR_TEXT_LEFT_INSET);
+    const base = super.render(editorWidth);
     const { editorLines, popupLines } = splitEditorRender(base);
     const body = [...editorLines];
 
     while (body.length < MIN_BODY_LINES) {
-      body.push(" ".repeat(innerWidth));
+      body.push(" ".repeat(editorWidth));
     }
 
     const leftTop = this.getUsageLabel();
     const rightTop = this.getModelLabel(Math.max(8, Math.floor(innerWidth * 0.48)));
     const cwdLabel = this.getCwdLabel();
     const workingLabel = this.getWorkingLabel();
+    const extensionStatusLabel = this.getExtensionStatusLabel();
     const outputExpandedLabel = this.getOutputExpandedLabel();
     const copyPromptLabel = this.getCopyPromptLabel();
     const gitChangesLabel = this.getGitChangesLabel();
     const leftStatusLabel = joinStatusLabels([
       workingLabel,
+      extensionStatusLabel,
       outputExpandedLabel,
       copyPromptLabel,
     ], ` ${this.fg("muted", "·")} `);
@@ -547,6 +568,10 @@ class AmpEditor extends CustomEditor {
     return `${this.fg("accent", working.frame)} ${this.fg("text", working.message)}  ${cancelHint}${elapsed}`;
   }
 
+  private getExtensionStatusLabel(): string {
+    return this.getExtensionStatus();
+  }
+
   private getOutputExpandedLabel(): string {
     if (!this.isOutputExpanded()) return "";
 
@@ -584,19 +609,23 @@ class AmpEditor extends CustomEditor {
   }
 
   private wrapBody(line: string, innerWidth: number): string {
-    const clipped = truncateToWidth(line, innerWidth, "");
-    const padding = " ".repeat(Math.max(0, innerWidth - visibleWidth(clipped)));
+    const leftInset = " ".repeat(EDITOR_TEXT_LEFT_INSET);
+    const contentWidth = Math.max(1, innerWidth - EDITOR_TEXT_LEFT_INSET);
+    const clipped = truncateToWidth(line, contentWidth, "");
+    const padding = " ".repeat(Math.max(0, contentWidth - visibleWidth(clipped)));
     const content = clipped ? this.fg("text", clipped) : clipped;
-    return this.sideBorder() + content + padding + this.sideBorder();
+    return this.sideBorder() + leftInset + content + padding + this.sideBorder();
   }
 
   private wrapPopupBlock(lines: string[], width: number): string[] {
     if (lines.length === 0) return [];
 
+    const leftInset = " ".repeat(1 + EDITOR_TEXT_LEFT_INSET);
+    const contentWidth = Math.max(1, width - visibleWidth(leftInset));
     return lines.map((line) => {
-      const clipped = truncateToWidth(line, width, "");
-      const padding = " ".repeat(Math.max(0, width - visibleWidth(clipped)));
-      return clipped + padding;
+      const clipped = truncateToWidth(line, contentWidth, "");
+      const padding = " ".repeat(Math.max(0, contentWidth - visibleWidth(clipped)));
+      return leftInset + clipped + padding;
     });
   }
 
@@ -708,6 +737,7 @@ export default function (pi: ExtensionAPI) {
   let activeThinkingLevel = "off";
   let activeCtx: ExtensionContext | undefined;
   let activeTui: { requestRender(): void } | undefined;
+  let activeFooterData: ReadonlyFooterDataProvider | undefined;
   let commandPaletteOpen = false;
   let isWorking = false;
   let workingMessage = WORKING_WAITING;
@@ -893,17 +923,15 @@ export default function (pi: ExtensionAPI) {
         elapsedMs: promptStartedAt === undefined ? undefined : Date.now() - promptStartedAt,
         finishedElapsedMs: finishedPromptElapsedMs,
         finishedStatus: finishedPromptStatus,
-      }), () => copyPromptStatus, openCommandPalette);
+      }), () => activeFooterData ? formatExtensionStatuses(activeFooterData.getExtensionStatuses()) : "", () => copyPromptStatus, openCommandPalette);
     });
 
     hideBuiltInWorking(ctx);
 
-    ctx.ui.setFooter(() => ({
-      invalidate() {},
-      render() {
-        return [];
-      },
-    }));
+    ctx.ui.setFooter((_tui, _theme, footerData) => {
+      activeFooterData = footerData;
+      return new EmptyFooter();
+    });
   });
 
   pi.on("thinking_level_select", (event, ctx) => {
@@ -983,5 +1011,6 @@ export default function (pi: ExtensionAPI) {
     copyPromptStatus = undefined;
     workingAnimation = undefined;
     activeTui = undefined;
+    activeFooterData = undefined;
   });
 }
