@@ -4,8 +4,8 @@ import { type Component, fuzzyFilter, Key, type KeybindingsManager, matchesKey, 
 const MIN_WIDTH = 40;
 const MAX_ROWS = 14;
 const SIDE_PADDING = 1;
-const TITLE = " Command Palette ";
-const HELP_HINT = " type filter · ↑↓ navigate · tab insert · enter run/insert · esc close ";
+const DEFAULT_TITLE = " Command Palette ";
+const DEFAULT_HELP_HINT = " type filter · ↑↓ navigate · tab insert · enter run/insert · esc close ";
 
 export interface CommandPaletteItem {
   name: string;
@@ -25,6 +25,18 @@ export interface CommandPaletteArgumentItem {
 }
 
 type GetArgumentCompletions = (command: string, prefix: string) => Promise<CommandPaletteArgumentItem[] | null>;
+
+export interface CommandPaletteOverlayOptions {
+  title?: string;
+  helpHint?: string;
+  itemLayout?: "columns" | "details";
+  maxItems?: number;
+  loadingMessage?: string;
+  noMatchesMessage?: string;
+  descriptionLines?: number;
+  selectedDescriptionLines?: number;
+  hideArgumentSource?: boolean;
+}
 
 type PaletteRenderItem = {
   name: string;
@@ -84,6 +96,7 @@ export class CommandPaletteOverlay implements Component {
     private readonly keybindings: KeybindingsManager,
     private readonly done: (result: CommandPaletteResult | null) => void,
     private readonly getArgumentCompletions?: GetArgumentCompletions,
+    private readonly options: CommandPaletteOverlayOptions = {},
   ) {
     this.query = initialQuery.replace(/^\//, "");
   }
@@ -195,21 +208,26 @@ export class CommandPaletteOverlay implements Component {
     this.selectedIndex = items.length === 0 ? 0 : Math.min(this.selectedIndex, items.length - 1);
     this.ensureSelectionVisible();
 
-    const visibleItems = items.slice(this.scrollOffset, this.scrollOffset + MAX_ROWS);
+    const maxItems = this.getMaxItems();
+    const visibleItems = items.slice(this.scrollOffset, this.scrollOffset + maxItems);
     const rows = this.argumentLoading
-      ? [this.fg("dim", "Loading options…")]
+      ? [this.fg("dim", this.options.loadingMessage ?? "Loading options…")]
       : visibleItems.length > 0
-        ? visibleItems.map((item, index) => this.renderItem(item, this.scrollOffset + index === this.selectedIndex, contentWidth))
-        : [this.fg("warning", this.argumentCommand ? "No options match" : "No commands match")];
+        ? visibleItems.flatMap((item, index) => this.renderItemRows(item, this.scrollOffset + index === this.selectedIndex, contentWidth))
+        : [this.fg("warning", this.options.noMatchesMessage ?? (this.argumentCommand ? "No options match" : "No commands match"))];
 
     return [
-      topBorder(boxWidth, this.theme),
+      topBorder(boxWidth, this.theme, this.options.title ?? DEFAULT_TITLE),
       wrapContent(this.renderInput(contentWidth), boxWidth, this.theme),
       wrapContent("", boxWidth, this.theme),
       ...rows.map((row) => wrapContent(row, boxWidth, this.theme)),
       wrapContent(this.renderCount(items.length, contentWidth), boxWidth, this.theme),
-      bottomBorder(boxWidth, this.theme),
+      bottomBorder(boxWidth, this.theme, this.options.helpHint ?? DEFAULT_HELP_HINT),
     ];
+  }
+
+  private getMaxItems(): number {
+    return Math.max(1, this.options.maxItems ?? MAX_ROWS);
   }
 
   private resetSelection(): void {
@@ -223,7 +241,7 @@ export class CommandPaletteOverlay implements Component {
       name: item.label || item.value,
       value: item.value,
       description: item.description,
-      source: this.argumentCommand?.name,
+      source: this.options.hideArgumentSource ? undefined : this.argumentCommand?.name,
     }));
   }
 
@@ -296,9 +314,10 @@ export class CommandPaletteOverlay implements Component {
       return;
     }
 
-    const lastVisibleIndex = this.scrollOffset + MAX_ROWS - 1;
+    const maxItems = this.getMaxItems();
+    const lastVisibleIndex = this.scrollOffset + maxItems - 1;
     if (this.selectedIndex > lastVisibleIndex) {
-      this.scrollOffset = this.selectedIndex - MAX_ROWS + 1;
+      this.scrollOffset = this.selectedIndex - maxItems + 1;
     }
   }
 
@@ -318,26 +337,56 @@ export class CommandPaletteOverlay implements Component {
     return truncateToWidth(prompt + text, width, "…", true);
   }
 
-  private renderItem(item: PaletteRenderItem, selected: boolean, width: number): string {
-    const sourceWidth = 12;
-    const nameWidth = Math.min(32, Math.max(8, Math.floor(width * 0.25)));
-    const descriptionWidth = Math.max(0, width - sourceWidth - nameWidth - 4);
+  private renderItemRows(item: PaletteRenderItem, selected: boolean, width: number): string[] {
+    if (this.options.itemLayout === "details" && !this.argumentCommand) {
+      return this.renderDetailItem(item, selected, width);
+    }
+    return [this.renderColumnItem(item, selected, width)];
+  }
+
+  private renderColumnItem(item: PaletteRenderItem, selected: boolean, width: number): string {
     const marker = selected ? this.fg("accent", "→ ") : "  ";
     const sourceText = item.source ? normalizeToSingleLine(item.source) : "";
+    const sourceWidth = sourceText ? 12 : 0;
+    const nameWidth = Math.min(32, Math.max(8, Math.floor(width * 0.25)));
+    const sourceGap = sourceText ? 2 : 0;
+    const descriptionWidth = Math.max(0, width - sourceWidth - sourceGap - nameWidth - 4);
     const nameText = normalizeToSingleLine(item.name);
     const descriptionText = item.description ? normalizeToSingleLine(item.description) : "";
     const source = sourceText ? this.fg("muted", truncateToWidth(sourceText, sourceWidth, "…")) : "";
     const nameColor: ThemeColor = selected ? "accent" : "text";
     const name = this.fg(nameColor, truncateToWidth(nameText, nameWidth, "…"));
     const description = descriptionText ? this.fg(selected ? "text" : "muted", truncateToWidth(descriptionText, descriptionWidth, "…")) : "";
-    const left = padVisible(`${marker}${source}`, sourceWidth + 2);
+    const left = sourceText ? padVisible(`${marker}${source}`, sourceWidth + 2) : marker;
     const middle = padVisible(name, nameWidth + 2);
     return truncateToWidth(`${left}${middle}${description}`, width, "", true);
   }
 
+  private renderDetailItem(item: PaletteRenderItem, selected: boolean, width: number): string[] {
+    const marker = selected ? this.fg("accent", "→ ") : "  ";
+    const nameText = normalizeToSingleLine(item.name);
+    const descriptionText = item.description ? normalizeToSingleLine(item.description) : "";
+    const nameColor: ThemeColor = selected ? "accent" : "text";
+    const name = this.fg(nameColor, selected ? this.theme.bold(nameText) : nameText);
+    const lines = [truncateToWidth(`${marker}${name}`, width, "", true)];
+
+    if (!descriptionText) return lines;
+
+    const indent = "    ";
+    const descriptionWidth = Math.max(1, width - visibleWidth(indent));
+    const maxDescriptionLines = selected
+      ? (this.options.selectedDescriptionLines ?? 4)
+      : (this.options.descriptionLines ?? 2);
+    const descriptionLines = wrapPlainText(descriptionText, descriptionWidth, maxDescriptionLines);
+    const descriptionColor: ThemeColor = selected ? "text" : "muted";
+    lines.push(...descriptionLines.map((line) => `${indent}${this.fg(descriptionColor, line)}`));
+    return lines;
+  }
+
   private renderCount(total: number, width: number): string {
-    const shown = Math.min(total, MAX_ROWS);
-    const text = total > MAX_ROWS ? `(${shown}/${total})` : `(${total})`;
+    const maxItems = this.getMaxItems();
+    const shown = Math.min(total, maxItems);
+    const text = total > maxItems ? `(${shown}/${total})` : `(${total})`;
     return truncateToWidth(this.fg("dim", text), width, "");
   }
 
@@ -392,23 +441,66 @@ function getPrintableInput(data: string): string {
   return "";
 }
 
-function topBorder(width: number, theme: Theme): string {
+function wrapPlainText(text: string, width: number, maxLines: number): string[] {
+  if (maxLines <= 0) return [];
+
+  const words = normalizeToSingleLine(text).split(" ").filter(Boolean);
+  const lines: string[] = [];
+  let current = "";
+  let consumedWords = 0;
+
+  for (const word of words) {
+    const candidate = current ? `${current} ${word}` : word;
+    if (visibleWidth(candidate) <= width) {
+      current = candidate;
+      consumedWords += 1;
+      continue;
+    }
+
+    if (current) {
+      lines.push(current);
+      if (lines.length >= maxLines) break;
+      current = "";
+    }
+
+    if (visibleWidth(word) > width) {
+      lines.push(truncateToWidth(word, width, "…"));
+      consumedWords += 1;
+      if (lines.length >= maxLines) break;
+      continue;
+    }
+
+    current = word;
+    consumedWords += 1;
+  }
+
+  if (current && lines.length < maxLines) lines.push(current);
+
+  if (consumedWords < words.length && lines.length > 0) {
+    const lastIndex = lines.length - 1;
+    lines[lastIndex] = truncateToWidth(`${lines[lastIndex]}…`, width, "…");
+  }
+
+  return lines;
+}
+
+function topBorder(width: number, theme: Theme, titleLabel: string): string {
   const innerWidth = Math.max(0, width - 2);
-  const titleWidth = visibleWidth(TITLE);
+  const titleWidth = visibleWidth(titleLabel);
   if (innerWidth < titleWidth + 2) return theme.fg("accent", `╭${"─".repeat(innerWidth)}╮`);
 
   const leftFill = Math.max(1, Math.floor((innerWidth - titleWidth) / 2));
   const rightFill = Math.max(0, innerWidth - titleWidth - leftFill);
-  const title = theme.fg("accent", theme.bold(TITLE));
+  const title = theme.fg("accent", theme.bold(titleLabel));
   return theme.fg("accent", `╭${"─".repeat(leftFill)}`) + title + theme.fg("accent", `${"─".repeat(rightFill)}╮`);
 }
 
-function bottomBorder(width: number, theme: Theme): string {
+function bottomBorder(width: number, theme: Theme, helpHint: string): string {
   const innerWidth = Math.max(0, width - 2);
-  if (innerWidth < visibleWidth(HELP_HINT) + 2) return theme.fg("accent", `╰${"─".repeat(innerWidth)}╯`);
+  if (innerWidth < visibleWidth(helpHint) + 2) return theme.fg("accent", `╰${"─".repeat(innerWidth)}╯`);
 
-  const label = theme.fg("dim", HELP_HINT);
-  const fill = Math.max(0, innerWidth - visibleWidth(HELP_HINT) - 1);
+  const label = theme.fg("dim", helpHint);
+  const fill = Math.max(0, innerWidth - visibleWidth(helpHint) - 1);
   return theme.fg("accent", "╰") + theme.fg("accent", "─".repeat(fill)) + label + theme.fg("accent", "─╯");
 }
 

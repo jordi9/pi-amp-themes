@@ -46,6 +46,27 @@ function createPaletteKeybindings() {
   };
 }
 
+type RegisteredCommand = {
+  description?: string;
+  getArgumentCompletions?: (prefix: string) => Array<{ value: string; label: string; description?: string }> | null;
+  handler: (args: string, ctx: any) => Promise<void> | void;
+};
+
+function registerAmpEditorCommands(commands: CommandPaletteItem[]): Map<string, RegisteredCommand> {
+  const registered = new Map<string, RegisteredCommand>();
+  const pi = {
+    on() {},
+    getThinkingLevel: () => "medium",
+    getCommands: () => commands,
+    registerCommand(name: string, command: RegisteredCommand) {
+      registered.set(name, command);
+    },
+  };
+
+  ampEditorExtension(pi as never);
+  return registered;
+}
+
 function pickPaletteItem(item: CommandPaletteItem, key: "tab" | "enter"): CommandPaletteResult | null | undefined {
   let result: CommandPaletteResult | null | undefined;
   new CommandPaletteOverlay([item], "", { requestRender() {} } as never, createThemeStub() as never, createPaletteKeybindings() as never, (value) => {
@@ -145,6 +166,33 @@ test("command palette caps command column on wide terminals", () => {
   expect(gap.length).toBeLessThanOrEqual(32);
 });
 
+test("focused skill palette renders names with wrapped descriptions", () => {
+  const overlay = new CommandPaletteOverlay(
+    [
+      {
+        name: "tdd",
+        source: "skill",
+        description: "Drive implementation with a red-green-refactor loop from one customer-centric story and its just-in-time examples.",
+      },
+    ],
+    "",
+    { requestRender() {} } as never,
+    createThemeStub() as never,
+    { matches: () => false } as never,
+    () => {},
+    undefined,
+    { title: " Skills ", itemLayout: "details", maxItems: 4 },
+  );
+
+  const rendered = overlay.render(64).map(stripAnsi).join("\n");
+
+  expect(rendered).toContain("Skills");
+  expect(rendered).toContain("→ tdd");
+  expect(rendered).toContain("Drive implementation with a red-green-refactor loop");
+  expect(rendered).toContain("customer-centric story");
+  expect(rendered).not.toMatch(/skill\s+tdd\s+Drive/);
+});
+
 test.each([
   [{ name: "settings", source: "builtin" }, "submit"],
   [{ name: "btw:new", source: "extension" }, "submit"],
@@ -188,6 +236,28 @@ test("command palette selects command arguments before submitting", async () => 
   expect(result).toEqual({ command: "impeccable live", action: "submit" });
 });
 
+test("command argument palette can hide the repeated command source column", async () => {
+  const overlay = new CommandPaletteOverlay(
+    [{ name: "impeccable", source: "extension" }],
+    "",
+    { requestRender() {} } as never,
+    createThemeStub() as never,
+    createPaletteKeybindings() as never,
+    () => {},
+    async () => [{ value: "live", label: "live", description: "Run live mode" }],
+    { hideArgumentSource: true },
+  );
+
+  overlay.handleInput("enter");
+  await flushPromises();
+
+  const argumentRow = overlay.render(80).map(stripAnsi).find((line) => line.includes("live"));
+
+  expect(argumentRow).toContain("→ live");
+  expect(argumentRow).toContain("Run live mode");
+  expect(argumentRow).not.toContain("impeccable");
+});
+
 test("command palette falls back to submitting commands without arguments", async () => {
   let result: CommandPaletteResult | null | undefined;
   const overlay = new CommandPaletteOverlay(
@@ -228,4 +298,53 @@ test("inserting a command from the palette leaves it editable without submitting
 
   expect(onSubmit).not.toHaveBeenCalled();
   expect(editor.getText()).toBe("/compact ");
+});
+
+test("skills command opens focused palette and inserts selected skill", async () => {
+  const commands = registerAmpEditorCommands([
+    {
+      name: "skill:tdd",
+      source: "skill",
+      description: "Drive implementation with a red-green-refactor loop from one customer-centric story and its just-in-time examples.",
+    },
+    { name: "component", source: "prompt", description: "Build a UI component" },
+  ]);
+  const skillsCommand = commands.get("skills");
+  const setEditorText = vi.fn();
+  let rendered = "";
+
+  expect(skillsCommand).toBeDefined();
+  expect(skillsCommand?.getArgumentCompletions?.("td")).toEqual([
+    {
+      value: "tdd",
+      label: "tdd",
+      description: "Drive implementation with a red-green-refactor loop from one customer-centric story and its just-in-time examples.",
+    },
+  ]);
+
+  await skillsCommand?.handler("td", {
+    hasUI: true,
+    mode: "tui",
+    ui: {
+      custom(factory: any, options: any) {
+        const component = factory(
+          { requestRender() {} },
+          createThemeStub(),
+          createPaletteKeybindings(),
+          () => {},
+        );
+        rendered = component.render(72).map(stripAnsi).join("\n");
+        expect(options.overlay).toBe(true);
+        return Promise.resolve({ command: "tdd", action: "insert" });
+      },
+      notify: vi.fn(),
+      setEditorText,
+    },
+  });
+
+  expect(rendered).toContain("Skills");
+  expect(rendered).toContain("→ tdd");
+  expect(rendered).toContain("red-green-refactor loop");
+  expect(rendered).not.toContain("component");
+  expect(setEditorText).toHaveBeenCalledWith("/skill:tdd ");
 });

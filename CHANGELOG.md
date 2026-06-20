@@ -20,6 +20,7 @@
 - Render Pi extension statuses inside the Amp editor status row so pluggable live indicators like `pi-impeccable` do not create a separate footer line.
 - Add an Amp command-arguments palette so slash-command sub-options stay in the overlay instead of Pi's footer selector.
 - Tighten wide command-palette columns so descriptions start closer to command names.
+- Add a focused `/skills` palette with skill names and wrapped descriptions instead of the general three-column command layout, and hide redundant command-source columns in argument palettes.
 
 ## 0.2.17
 

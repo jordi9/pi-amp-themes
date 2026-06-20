@@ -1,4 +1,4 @@
-import { CustomEditor, type ExtensionAPI, type ExtensionContext, type ReadonlyFooterDataProvider, type ThemeColor } from "@earendil-works/pi-coding-agent";
+import { CustomEditor, type ExtensionAPI, type ExtensionCommandContext, type ExtensionContext, type ReadonlyFooterDataProvider, type ThemeColor } from "@earendil-works/pi-coding-agent";
 import { truncateToWidth, visibleWidth, type AutocompleteItem, type AutocompleteProvider, type Component } from "@earendil-works/pi-tui";
 import { BUILTIN_COMMAND_PALETTE_ITEMS, CommandPaletteOverlay, type CommandPaletteArgumentItem, type CommandPaletteItem, type CommandPaletteResult, stripAnsi } from "./amp-command-palette.js";
 import { execFileSync, spawnSync } from "node:child_process";
@@ -737,6 +737,88 @@ function getCommandPaletteItems(pi: ExtensionAPI): CommandPaletteItem[] {
   });
 }
 
+function getSkillPaletteItems(pi: ExtensionAPI): CommandPaletteItem[] {
+  const seen = new Set<string>();
+  return pi.getCommands()
+    .filter((command) => command.source === "skill")
+    .map((command) => ({
+      name: command.name.replace(/^skill:/, ""),
+      description: command.description,
+      source: "skill",
+    }))
+    .filter((item) => {
+      if (seen.has(item.name)) return false;
+      seen.add(item.name);
+      return true;
+    })
+    .sort((a, b) => a.name.localeCompare(b.name));
+}
+
+function getSkillArgumentCompletions(pi: ExtensionAPI, prefix: string): AutocompleteItem[] | null {
+  const normalizedPrefix = prefix.trim().toLowerCase();
+  const items = getSkillPaletteItems(pi);
+  const filtered = normalizedPrefix
+    ? items.filter((item) => `${item.name} ${item.description ?? ""}`.toLowerCase().includes(normalizedPrefix))
+    : items;
+
+  if (filtered.length === 0) return null;
+  return filtered.map((item) => ({
+    value: item.name,
+    label: item.name,
+    description: item.description,
+  }));
+}
+
+async function openSkillsPalette(pi: ExtensionAPI, initialQuery: string, ctx: ExtensionCommandContext): Promise<void> {
+  const mode = (ctx as ExtensionCommandContext & { mode?: string }).mode;
+  if (!ctx.hasUI || (mode !== undefined && mode !== "tui")) {
+    ctx.ui.notify("The skills palette is available in interactive mode.", "warning");
+    return;
+  }
+
+  const items = getSkillPaletteItems(pi);
+  if (items.length === 0) {
+    ctx.ui.notify("No skills available.", "info");
+    return;
+  }
+
+  const result = await ctx.ui.custom<CommandPaletteResult | null>(
+    (tui, theme, keybindings, done) => new CommandPaletteOverlay(
+      items,
+      initialQuery,
+      tui,
+      theme,
+      keybindings,
+      done,
+      undefined,
+      {
+        title: " Skills ",
+        helpHint: " type filter · ↑↓ navigate · tab/enter insert · esc close ",
+        itemLayout: "details",
+        maxItems: 5,
+        noMatchesMessage: "No skills match",
+        selectedDescriptionLines: 4,
+        descriptionLines: 1,
+        hideArgumentSource: true,
+      },
+    ),
+    {
+      overlay: true,
+      overlayOptions: {
+        anchor: "center",
+        width: "90%",
+        minWidth: 42,
+        maxHeight: "80%",
+        margin: 1,
+      },
+    },
+  );
+
+  if (!result) return;
+  const skillName = result.command.replace(/^skill:/, "");
+  ctx.ui.setEditorText(`/skill:${skillName} `);
+}
+
 export default function (pi: ExtensionAPI) {
   const activeToolExecutions = new Set<string>();
   let activeThinkingLevel = "off";
@@ -869,6 +951,7 @@ export default function (pi: ExtensionAPI) {
         keybindings,
         done,
         getCommandArgumentItems,
+        { hideArgumentSource: true },
       ),
       {
         overlay: true,
@@ -926,6 +1009,14 @@ export default function (pi: ExtensionAPI) {
       forcedWorkingAnimation = animation;
       setAnimation(animation);
       ctx.ui.notify(`Working animation set to ${workingAnimationSummary(animation)}.`, "info");
+    },
+  });
+
+  pi.registerCommand("skills", {
+    description: "Browse skills in a focused palette.",
+    getArgumentCompletions: (prefix) => getSkillArgumentCompletions(pi, prefix),
+    handler: async (args, ctx) => {
+      await openSkillsPalette(pi, args.trim(), ctx);
     },
   });
 
