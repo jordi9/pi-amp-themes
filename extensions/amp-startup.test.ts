@@ -168,6 +168,18 @@ test("amp startup header uses one hero border color", () => {
   expect(frameRules.every((call) => call.color === "borderAccent")).toBe(true);
 });
 
+test("amp startup header frame fills the available wide terminal width", () => {
+  const header = new AmpStartupHeader(createThemeStub() as never, () => createSnapshot());
+  const width = 140;
+
+  const lines = header.render(width);
+  const framedLines = lines.filter((line) => /^[╭│╰]/.test(line));
+
+  expect(framedLines).not.toHaveLength(0);
+  for (const line of framedLines) expect(visibleWidth(line), line).toBe(width);
+  expectLinesWithinWidth(lines, width);
+});
+
 test("amp-dark startup title uses success color", () => {
   const calls: Array<{ color: string; text: string }> = [];
   const header = new AmpStartupHeader(createRecordingThemeStub(calls, "amp-dark") as never, () => createSnapshot());

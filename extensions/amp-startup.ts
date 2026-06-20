@@ -3,7 +3,6 @@ import { truncateToWidth, visibleWidth, type Component } from "@earendil-works/p
 import { homedir } from "node:os";
 import { basename, isAbsolute, relative, resolve } from "node:path";
 
-const MAX_HEADER_WIDTH = 122;
 const MIN_FRAMED_WIDTH = 64;
 const BRAND = "JORDI9 INDUSTRIES";
 const TAGLINE = "Importer/Exporter of Fine Software";
@@ -548,7 +547,7 @@ export class AmpStartupHeader implements Component {
 
   private renderFramed(width: number): string[] {
     const snapshot = this.getSnapshot();
-    const boxWidth = Math.min(width, MAX_HEADER_WIDTH);
+    const boxWidth = width;
 
     if (!this.expanded) return this.renderCollapsedFramed(snapshot, boxWidth, width);
 
