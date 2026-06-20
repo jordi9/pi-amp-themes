@@ -1,4 +1,4 @@
-import { VERSION, type BuildSystemPromptOptions, type ExtensionAPI, type ExtensionContext, type Theme, type ThemeColor } from "@earendil-works/pi-coding-agent";
+import { VERSION, type BuildSystemPromptOptions, type ExtensionAPI, type ExtensionContext, type Theme } from "@earendil-works/pi-coding-agent";
 import { truncateToWidth, visibleWidth, type Component } from "@earendil-works/pi-tui";
 import { homedir } from "node:os";
 import { basename, isAbsolute, relative, resolve } from "node:path";
@@ -15,19 +15,6 @@ const BRAND_WORDMARK = [
   "██   ██║██║   ██║██╔══██╗██║  ██║██║ ╚═══██║  ██║██║╚██╗██║██║  ██║██║   ██║╚════██║   ██║   ██╔══██╗██║██╔══╝  ╚════██║",
   "╚█████╔╝╚██████╔╝██║  ██║██████╔╝██║ █████╔╝  ██║██║ ╚████║██████╔╝╚██████╔╝███████║   ██║   ██║  ██║██║███████╗███████║",
   " ╚════╝  ╚═════╝ ╚═╝  ╚═╝╚═════╝ ╚═╝ ╚════╝   ╚═╝╚═╝  ╚═══╝╚═════╝  ╚═════╝ ╚══════╝   ╚═╝   ╚═╝  ╚═╝╚═╝╚══════╝╚══════╝",
-];
-
-const FACTORY_MARK = [
-  "       _.-o#&&#o-._",
-  "    .o\"  dMMMMMb  \"o.",
-  "  .d\"  J9J9MMMMMb  \"b.",
-  " d'  .MMMMMMMMMMb  `b",
-  ":M   `*MMMMMMMMMP   M:",
-  "MMb      `\"*#MP'   dM",
-  "`MMHo      MMM    oMM'",
-  " `?MM.    JMM'  .MM?'",
-  "   `&.        ./&'",
-  "      `--.##.--'",
 ];
 
 export type StartupSection = {
@@ -458,38 +445,6 @@ function projectName(cwd: string): string {
   return basename(cwd) || cwd || "project";
 }
 
-function compactModelId(modelId: string, maxWidth: number): string {
-  if (visibleWidth(modelId) <= maxWidth) return modelId;
-
-  const simplified = modelId
-    .replace(/^claude-/, "")
-    .replace(/^gpt-/, "")
-    .replace(/-20\d{6}$/, "")
-    .replace(/-\d{4}-\d{2}-\d{2}$/, "")
-    .replace(/-latest$/, "");
-
-  if (visibleWidth(simplified) <= maxWidth) return simplified;
-  return truncateToWidth(simplified, maxWidth, "…");
-}
-
-function getThinkingColor(level: string): ThemeColor {
-  switch (level) {
-    case "minimal":
-      return "thinkingMinimal";
-    case "low":
-      return "thinkingLow";
-    case "medium":
-      return "thinkingMedium";
-    case "high":
-      return "thinkingHigh";
-    case "xhigh":
-      return "thinkingXhigh";
-    case "off":
-    default:
-      return "thinkingOff";
-  }
-}
-
 function padToWidth(text: string, width: number): string {
   const clipped = truncateToWidth(text, Math.max(0, width), "…");
   return clipped + " ".repeat(Math.max(0, width - visibleWidth(clipped)));
@@ -526,13 +481,6 @@ function styleBrandWordmarkLine(theme: ThemeLike, line: string, index: number): 
   if (index <= 1) return theme.fg("accent", theme.bold(line));
   if (index === BRAND_WORDMARK.length - 1) return theme.fg("borderMuted", line);
   return theme.fg("mdHeading", theme.bold(line));
-}
-
-function styleFactoryLine(theme: ThemeLike, line: string, index: number): string {
-  if (index <= 1 || index === FACTORY_MARK.length - 1) return theme.fg("borderMuted", line);
-  if (index <= 5) return theme.fg("dim", line);
-  if (index <= 9) return theme.fg("accent", line);
-  return theme.fg("mdHeading", line);
 }
 
 export function createStartupSnapshot(
@@ -589,6 +537,7 @@ export class AmpStartupHeader implements Component {
   private renderCompact(width: number): string[] {
     const snapshot = this.getSnapshot();
     return [
+      "",
       this.titleRuleLine(BRAND, width),
       centerToWidth(this.theme.fg("mdHeading", TAGLINE), width),
       centerToWidth(this.summaryLine(snapshot, width), width),
@@ -608,6 +557,7 @@ export class AmpStartupHeader implements Component {
     const bottom = frameRuleLine(this.theme, "╰", "╯", innerWidth);
 
     const body: string[] = [
+      "",
       ...this.headingLines(boxWidth),
       "",
       top,
@@ -628,6 +578,7 @@ export class AmpStartupHeader implements Component {
     const bottom = frameRuleLine(this.theme, "╰", "╯", innerWidth);
 
     const body = [
+      "",
       ...this.headingLines(boxWidth),
       centerToWidth(this.theme.fg("mdHeading", TAGLINE), boxWidth),
       "",
@@ -654,87 +605,31 @@ export class AmpStartupHeader implements Component {
   }
 
   private dashboardLines(snapshot: StartupSnapshot, innerWidth: number): string[] {
-    const factoryWidth = Math.max(...FACTORY_MARK.map((line) => visibleWidth(line)));
-    const buildInfo = (width: number) => this.infoPanelLines(snapshot, width);
-    if (innerWidth >= factoryWidth + 38) return this.splitFactoryDashboardLines(snapshot, innerWidth, factoryWidth, buildInfo);
-    return this.stackedFactoryDashboardLines(snapshot, innerWidth, factoryWidth, buildInfo);
+    return this.paddedDashboardLines(innerWidth, (width) => this.infoPanelLines(snapshot, width));
   }
 
   private compactDashboardLines(snapshot: StartupSnapshot, innerWidth: number): string[] {
-    const factoryWidth = Math.max(...FACTORY_MARK.map((line) => visibleWidth(line)));
-    const buildInfo = (width: number) => this.compactInfoPanelLines(snapshot, width);
-    if (innerWidth >= factoryWidth + 32) return this.splitFactoryDashboardLines(snapshot, innerWidth, factoryWidth, buildInfo);
-    return this.stackedFactoryDashboardLines(snapshot, innerWidth, factoryWidth, buildInfo);
+    return this.paddedDashboardLines(innerWidth, (width) => this.compactInfoPanelLines(snapshot, width));
   }
 
-  private splitFactoryDashboardLines(
-    snapshot: StartupSnapshot,
+  private paddedDashboardLines(
     innerWidth: number,
-    factoryWidth: number,
     buildInfoLines: (width: number) => string[],
   ): string[] {
-    const sidePadding = 2;
-    const gapWidth = 4;
-    const rightWidth = Math.max(1, innerWidth - (sidePadding * 2) - factoryWidth - gapWidth);
-    const leftLines = this.factoryPanelLines(snapshot, factoryWidth);
-    const rightLines = buildInfoLines(rightWidth);
-    const rowCount = Math.max(leftLines.length, rightLines.length);
-    const lines = [""];
-
-    for (let index = 0; index < rowCount; index += 1) {
-      lines.push(
-        " ".repeat(sidePadding)
-        + padToWidth(leftLines[index] ?? "", factoryWidth)
-        + " ".repeat(gapWidth)
-        + padToWidth(rightLines[index] ?? "", rightWidth)
-        + " ".repeat(sidePadding),
-      );
-    }
-
-    lines.push("");
-    return lines;
-  }
-
-  private stackedFactoryDashboardLines(
-    snapshot: StartupSnapshot,
-    innerWidth: number,
-    factoryWidth: number,
-    buildInfoLines: (width: number) => string[],
-  ): string[] {
-    const padding = 2;
+    const padding = innerWidth >= 4 ? 2 : 0;
     const contentWidth = Math.max(1, innerWidth - (padding * 2));
-    const factoryLines = this.factoryPanelLines(snapshot, Math.min(factoryWidth, contentWidth))
-      .map((line) => centerToWidth(line, contentWidth));
-    const content = [
-      ...factoryLines,
-      "",
-      ...buildInfoLines(contentWidth),
-    ];
-
-    return ["", ...content.map((line) => `${" ".repeat(padding)}${padToWidth(line, contentWidth)}${" ".repeat(padding)}`), ""];
-  }
-
-  private factoryPanelLines(snapshot: StartupSnapshot, width: number): string[] {
-    const modelWidth = Math.max(6, Math.floor(width * 0.62));
-    const model = compactModelId(snapshot.modelId, modelWidth);
-    const session = snapshot.sessionName ? `session ${snapshot.sessionName}` : "fresh session";
 
     return [
-      ...FACTORY_MARK.map((line, index) => truncateToWidth(styleFactoryLine(this.theme, line, index), width, "")),
       "",
-      joinStyled([
-        this.theme.fg("text", model),
-        this.theme.fg(getThinkingColor(snapshot.thinkingLevel), snapshot.thinkingLevel),
-      ], this.theme.fg("dim", " · "), width),
-      this.theme.fg("muted", truncateToWidth(snapshot.cwd, width, "…")),
-      this.theme.fg("dim", truncateToWidth(session, width, "…")),
+      ...buildInfoLines(contentWidth).map((line) => `${" ".repeat(padding)}${padToWidth(line, contentWidth)}${" ".repeat(padding)}`),
+      "",
     ];
   }
 
   private infoPanelLines(snapshot: StartupSnapshot, width: number): string[] {
     const lines = [
-      centerToWidth(this.theme.fg("mdHeading", this.theme.bold(`pi v${VERSION} · ${snapshot.project}`)), width),
-      centerToWidth(this.summaryLine(snapshot, width), width),
+      this.startupTitleLine(snapshot),
+      this.summaryLine(snapshot, width),
     ];
 
     const addSection = (sectionLines: string[]) => {
@@ -752,19 +647,20 @@ export class AmpStartupHeader implements Component {
   }
 
   private compactInfoPanelLines(snapshot: StartupSnapshot, width: number): string[] {
-    const tools = snapshot.tools.length > 0 ? snapshot.tools : snapshot.activeTools;
     const lines = [
-      centerToWidth(this.theme.fg("mdHeading", this.theme.bold(`pi v${VERSION} · ${snapshot.project}`)), width),
-      centerToWidth(this.summaryLine(snapshot, width), width),
+      this.startupTitleLine(snapshot),
+      this.summaryLine(snapshot, width),
       "",
     ];
 
     if (snapshot.contextFilesKnown) lines.push(this.trimmedResourceLine("context", snapshot.contextFiles, width, 2));
-    lines.push(this.trimmedResourceLine("skills", snapshot.skills, width, 2));
-    lines.push(this.trimmedResourceLine("tools", tools, width, 4));
-    lines.push(this.trimmedResourceLine("commands", snapshot.extensionCommands, width, 2));
     lines.push("", this.hintLine(snapshot, width));
     return lines.map((line) => truncateToWidth(line, width, "…"));
+  }
+
+  private startupTitleLine(snapshot: StartupSnapshot): string {
+    const color = this.theme.name === "amp-dark" ? "success" : "mdHeading";
+    return this.theme.fg(color, this.theme.bold(`pi v${VERSION} · ${snapshot.project}`));
   }
 
   private contextPanelLines(snapshot: StartupSnapshot, width: number): string[] {
@@ -870,7 +766,6 @@ export class AmpStartupHeader implements Component {
     const parts = [
       this.theme.fg("text", plural(tools.length, "tool")),
       this.theme.fg("text", plural(snapshot.skills.length, "skill")),
-      snapshot.contextFilesKnown ? this.theme.fg("text", plural(snapshot.contextFiles.length, "context file")) : "",
       this.theme.fg("text", plural(snapshot.extensionCommands.length, "command")),
     ];
     return joinStyled(parts, this.theme.fg("dim", " · "), width);

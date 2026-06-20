@@ -27,9 +27,9 @@ function createThemeStub(): ThemeStub {
   };
 }
 
-function createRecordingThemeStub(calls: Array<{ color: string; text: string }>): ThemeStub {
+function createRecordingThemeStub(calls: Array<{ color: string; text: string }>, name = "amp-gruvbox-dark-hard"): ThemeStub {
   return {
-    name: "amp-gruvbox-dark-hard",
+    name,
     fg(color: string, text: string) {
       calls.push({ color, text });
       return text;
@@ -122,26 +122,36 @@ function expectLinesWithinWidth(lines: string[], width: number): void {
   }
 }
 
-test("amp startup header renders a polished compact factory dashboard", () => {
-  const header = new AmpStartupHeader(createThemeStub() as never, () => createSnapshot());
+test("amp startup header renders a polished compact startup dashboard", () => {
+  const header = new AmpStartupHeader(createThemeStub() as never, () => createSnapshot({
+    contextFiles: ["AGENTS.md"],
+    contextFilesKnown: true,
+  }));
   const lines = header.render(88);
   const text = lines.join("\n");
 
-  expect(lines[0]).toContain("████");
+  expect(lines[0]).toBe("");
+  expect(lines[1]).toContain("████");
+  expect(lines.some((line) => line.startsWith("│  pi v"))).toBe(true);
+  expect(lines.some((line) => line.startsWith("│  8 tools · 4 skills · 1 command"))).toBe(true);
   expect(text).toContain("Importer/Exporter of Fine Software");
-  expect(text).toContain("J9J9MMMM");
+  expect(text).not.toContain("J9J9MMMM");
+  expect(text).not.toContain("sonnet-4");
+  expect(text).not.toContain("claude-sonnet-4-20250514");
+  expect(text).not.toContain("~/dev/pi-amp-themes");
+  expect(text).not.toContain("fresh session");
   expect(text).not.toContain("| []  []  |");
   expect(text).not.toContain("⣿");
-  expect(text).not.toContain("context (");
-  expect(text).toContain("skills (4): git-committer, librarian +2");
+  expect(text).toContain("context (1): AGENTS.md");
+  expect(text).not.toContain("1 context file");
+  expect(text).not.toContain("skills (");
+  expect(text).not.toContain("tools (");
+  expect(text).not.toContain("commands (");
   expect(text).not.toContain("playwright-browser");
   expect(text).not.toContain("vercel-react-best-practices");
-  expect(text).toContain("tools (8): bash, edit, read, write +4");
-  expect(text).toContain("commands (1): /builtin-header");
   expect(text).not.toContain("themes (");
   expect(text).not.toContain("active: bash, edit, read, write");
   expect(text).not.toContain("ctx:");
-  expect(text).not.toContain("AGENTS.md");
   expect(text).not.toContain("prompts:");
   expect(text).not.toContain("HERMES LINK ONLINE");
   expectLinesWithinWidth(lines, 88);
@@ -156,6 +166,18 @@ test("amp startup header uses one hero border color", () => {
   const frameRules = calls.filter((call) => /^─{40,}$/.test(call.text));
   expect(frameRules).not.toHaveLength(0);
   expect(frameRules.every((call) => call.color === "borderAccent")).toBe(true);
+});
+
+test("amp-dark startup title uses success color", () => {
+  const calls: Array<{ color: string; text: string }> = [];
+  const header = new AmpStartupHeader(createRecordingThemeStub(calls, "amp-dark") as never, () => createSnapshot());
+
+  header.render(88);
+
+  expect(calls).toContainEqual(expect.objectContaining({
+    color: "success",
+    text: expect.stringContaining("pi-amp-themes"),
+  }));
 });
 
 test("amp startup header stays within narrow terminal widths", () => {
@@ -189,6 +211,8 @@ test("amp startup header expands resource sections in place", () => {
   expect(text).not.toContain("Loaded Resources");
   expect(text).toContain("Ctrl+O collapses");
   expect(text).not.toContain("context (");
+  expect(expanded.some((line) => line.startsWith("│  pi v"))).toBe(true);
+  expect(expanded.some((line) => line.startsWith("│  8 tools · 4 skills · 1 command"))).toBe(true);
   expect(text).toContain("8 tools · 4 skills · 1 command");
   expect(text).toContain("tools (8): bash, edit, read, write, grep, find");
   expect(text).toContain("bash — Execute shell commands");
@@ -202,7 +226,8 @@ test("amp startup header expands resource sections in place", () => {
   expect(text).toContain("/builtin-header");
   expect(text).not.toContain("prompts (");
   expect(text).not.toContain("/create-goal");
-  expect(text).toContain("J9J9MMMM");
+  expect(text).not.toContain("J9J9MMMM");
+  expect(text).not.toContain("session demo");
   expectLinesWithinWidth(expanded, 88);
 });
 
@@ -269,13 +294,16 @@ test("amp startup extension installs the custom header on session start", async 
 
     expect(rendered).toContain("████");
     expect(rendered).toContain("Importer/Exporter of Fine Software");
-    expect(rendered).toContain("J9J9MMMM");
+    expect(rendered).not.toContain("J9J9MMMM");
+    expect(rendered).not.toContain("sonnet-4");
+    expect(rendered).not.toContain("claude-sonnet-4-20250514");
+    expect(rendered).not.toContain("fresh session");
     expect(rendered).not.toContain("| []  []  |");
     expect(rendered).not.toContain("⣿");
     expect(rendered).not.toContain("context (");
-    expect(rendered).toContain("tools (4): bash, edit, read, write");
-    expect(rendered).toContain("skills (1): librarian");
-    expect(rendered).toContain("commands (1): /builtin-header");
+    expect(rendered).not.toContain("tools (");
+    expect(rendered).not.toContain("skills (");
+    expect(rendered).not.toContain("commands (");
     expect(rendered).not.toContain("themes (");
     expect(rendered).not.toContain("prompts:");
     expect(rendered).toContain("pi-amp-themes");
@@ -284,6 +312,8 @@ test("amp startup extension installs the custom header on session start", async 
 
     header.setExpanded(true);
     const expanded = header.render(140).join("\n");
+    expect(expanded).toContain("tools (4): bash, edit, read, write");
+    expect(expanded).toContain("skills (1): librarian");
     expect(expanded).toContain("commands (1): /builtin-header");
     expect(expanded).toContain("themes (2): amp-dark, amp-gruvbox-dark-hard");
     expect(expanded).toContain(join(cwd, "themes/amp-dark.json"));
