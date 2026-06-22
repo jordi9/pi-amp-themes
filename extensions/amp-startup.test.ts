@@ -3,6 +3,7 @@ import { expect, test } from "vitest";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { visibleWidth } from "@earendil-works/pi-tui";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { homedir } from "node:os";
 import { join } from "node:path";
 
 import ampStartupExtension, { AmpStartupHeader, type StartupSnapshot } from "./amp-startup.js";
@@ -82,7 +83,7 @@ function createSnapshot(overrides: Partial<StartupSnapshot> = {}): StartupSnapsh
   };
 }
 
-function createPiStub() {
+function createPiStub(cwd = "/tmp/pi-project") {
   const handlers = new Map<string, EventHandler>();
   const pi = {
     on(event: string, handler: EventHandler) {
@@ -90,7 +91,18 @@ function createPiStub() {
     },
     getThinkingLevel: () => "medium",
     getCommands: () => [
-      { name: "librarian", description: "Research", source: "skill" },
+      {
+        name: "librarian",
+        description: "Research",
+        source: "skill",
+        sourceInfo: { path: join(homedir(), ".agents/skills/librarian/SKILL.md"), source: "local", scope: "temporary" },
+      },
+      {
+        name: "project-helper",
+        description: "Project helper",
+        source: "skill",
+        sourceInfo: { path: join(cwd, ".agents/skills/project-helper/SKILL.md"), source: "local", scope: "temporary" },
+      },
       { name: "create-goal", description: "Create goal", source: "prompt" },
       {
         name: "builtin-header",
@@ -262,7 +274,7 @@ test("amp startup extension installs the custom header on session start", async 
   await writeFile(join(cwd, "AGENTS.md"), "local instructions");
 
   try {
-    const { pi, handlers } = createPiStub();
+    const { pi, handlers } = createPiStub(cwd);
     let headerFactory: ((tui: unknown, theme: ThemeStub) => AmpStartupHeader) | undefined;
 
     await ampStartupExtension(pi);
@@ -325,7 +337,11 @@ test("amp startup extension installs the custom header on session start", async 
     header.setExpanded(true);
     const expanded = header.render(140).join("\n");
     expect(expanded).toContain("tools (4): bash, edit, read, write");
-    expect(expanded).toContain("skills (1): librarian");
+    expect(expanded).toContain("skills (2): librarian, project-helper");
+    expect(expanded).toContain("project-helper — .agents/skills/project-helper/SKILL.md");
+    expect(expanded).toContain("librarian — ~/.agents/skills/librarian/SKILL.md");
+    expect(expanded).toMatch(/project[^\n]*\n[^\n]*project-helper — \.agents\/skills\/project-helper\/SKILL\.md/);
+    expect(expanded).toMatch(/user[^\n]*\n[^\n]*librarian — ~\/\.agents\/skills\/librarian\/SKILL\.md/);
     expect(expanded).toContain("commands (1): /builtin-header");
     expect(expanded).toContain("themes (2): amp-dark, amp-gruvbox-dark-hard");
     expect(expanded).toContain(join(cwd, "themes/amp-dark.json"));

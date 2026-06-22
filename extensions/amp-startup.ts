@@ -60,7 +60,8 @@ type SourceInfoLike = {
 type ToolLike = { name?: unknown; description?: unknown; sourceInfo?: SourceInfoLike };
 type CommandLike = { name?: unknown; source?: unknown; sourceInfo?: SourceInfoLike };
 type ThemeInfoLike = { name?: string; path?: string | undefined };
-type ResourceItem = { path: string; label?: string; sourceInfo?: SourceInfoLike };
+type ResourceScope = "project" | "user" | "path";
+type ResourceItem = { path: string; label?: string; sourceInfo?: SourceInfoLike; scope?: ResourceScope };
 type ToolAwareAPI = ExtensionAPI & {
   getAllTools?: () => ToolLike[];
   getActiveTools?: () => string[];
@@ -135,13 +136,36 @@ function sourceInfoSource(sourceInfo: SourceInfoLike | undefined): string {
   return typeof sourceInfo?.source === "string" ? sourceInfo.source : "local";
 }
 
-function sourceInfoScope(sourceInfo: SourceInfoLike | undefined): "project" | "user" | "path" {
+function sourceInfoScope(sourceInfo: SourceInfoLike | undefined): ResourceScope {
   const source = sourceInfoSource(sourceInfo);
   const scope = typeof sourceInfo?.scope === "string" ? sourceInfo.scope : "project";
   if (source === "cli" || scope === "temporary") return "path";
   if (scope === "user") return "user";
   if (scope === "project") return "project";
   return "path";
+}
+
+function relativeInside(root: string, filePath: string): string | undefined {
+  const rel = relative(resolve(root), resolve(filePath));
+  if (!rel || rel === "." || rel.startsWith("..") || isAbsolute(rel)) return undefined;
+  return rel.replace(/\\/g, "/");
+}
+
+function localPathScope(filePath: string, cwd: string): ResourceScope {
+  const absolutePath = isAbsolute(filePath) ? resolve(filePath) : resolve(cwd, filePath);
+  if (relativeInside(cwd, absolutePath)) return "project";
+  if (relativeInside(homedir(), absolutePath)) return "user";
+  return "path";
+}
+
+function resourceScope(sourceInfo: SourceInfoLike | undefined, filePath: string, cwd: string): ResourceScope {
+  const scope = sourceInfoScope(sourceInfo);
+  return scope === "path" ? localPathScope(filePath, cwd) : scope;
+}
+
+function skillDisplayPath(fullPath: string, sourceInfo: SourceInfoLike | undefined, cwd: string): string {
+  const projectRelativePath = isAbsolute(fullPath) ? relativeInside(cwd, fullPath) : undefined;
+  return projectRelativePath ?? getShortPath(fullPath, sourceInfo);
 }
 
 function isPackageSource(sourceInfo: SourceInfoLike | undefined): boolean {
@@ -175,7 +199,7 @@ function buildScopeGroupLines(items: ResourceItem[], packageLabelFallback?: (ite
   };
 
   for (const item of items) {
-    const scope = sourceInfoScope(item.sourceInfo);
+    const scope = item.scope ?? sourceInfoScope(item.sourceInfo);
     const group = groups[scope];
     if (isPackageSource(item.sourceInfo)) {
       const source = sourceInfoSource(item.sourceInfo);
@@ -356,7 +380,9 @@ function getStartupResources(pi: ExtensionAPI, ctx: ExtensionContext, contextFil
   const skillItems = skillCommands.map((command): ResourceItem => {
     const name = commandName(command)?.replace(/^skill:/, "") ?? "skill";
     const path = commandResourcePath(command, name);
-    return { path, sourceInfo: command.sourceInfo, label: sourceInfoPath(command.sourceInfo) ? undefined : name };
+    const shortPath = sourceInfoPath(command.sourceInfo) ? skillDisplayPath(path, command.sourceInfo, ctx.cwd) : undefined;
+    const label = shortPath && shortPath !== name ? `${name} — ${shortPath}` : name;
+    return { path, sourceInfo: command.sourceInfo, scope: resourceScope(command.sourceInfo, path, ctx.cwd), label };
   });
   const skills = uniqueSorted(skillCommands.map((command) => commandName(command)?.replace(/^skill:/, "") ?? ""));
 
