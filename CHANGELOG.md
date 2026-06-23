@@ -15,6 +15,7 @@
 - Use gold/yellow plus bold styling for the `xhigh` thinking label instead of red.
 - Add fun high-context labels in the editor with escalating colors: `dumb`, `dumber`, and `dumbest`.
 - Render assistant `txt` code fences containing HTTP endpoint lists as compact Markdown route tables.
+- Dedent assistant shell code fences, remove the extra code-block rendering indent, and style code-block fence rows as compact `╭─ language` / `╰─` rails so commands are easier to copy and paste.
 - Collapse `pi-playwright` bash wrapper calls into colorized Playwright action summaries while keeping compact bash output rendering.
 - Render `impeccable` skill live-mode bash calls and collapsed JSON results as compact action summaries.
 - Render Pi extension statuses inside the Amp editor status row so pluggable live indicators like `pi-impeccable` do not create a separate footer line.

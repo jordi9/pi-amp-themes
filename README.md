@@ -28,7 +28,7 @@ If `npm:pi-tool-display` is installed separately, remove it. `amp-themes` alread
 - `Ctrl+Shift+X` to copy the current prompt editor text to the system clipboard with a transient editor status
 - Working status integrated into the editor status row, with a random per-prompt animation, elapsed prompt time after `Esc to cancel`, a 7-second finished/cancelled timer, and git changes kept on the right
 - Compact Amp-style user messages with thinking-level color sync
-- Display-only assistant Markdown enhancement that turns HTTP endpoint `txt` fences into route tables
+- Display-only assistant Markdown enhancements that turn HTTP endpoint `txt` fences into route tables and render copy-pasteable, lightly styled shell fences
 - Bundled `pi-tool-display`
 
 ## Development

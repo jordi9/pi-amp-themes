@@ -1,10 +1,22 @@
 import { AssistantMessageComponent, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
 const AMP_ASSISTANT_MARKDOWN_PATCH_OWNER = {};
-const ENDPOINT_FENCE_REGEX = /(^|\n)([ \t]{0,3})```([^\r\n`]*)\r?\n([\s\S]*?)\r?\n[ \t]{0,3}```[ \t]*(?=\r?\n|$)/g;
+const AMP_CODE_BLOCK_THEME = Symbol("ampCodeBlockTheme");
+const MARKDOWN_FENCE_REGEX = /(^|\n)([ \t]{0,3})```([^\r\n`]*)\r?\n([\s\S]*?)\r?\n[ \t]{0,3}```[ \t]*(?=\r?\n|$)/g;
 const HTTP_METHODS = new Set(["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS", "CONNECT", "TRACE"]);
 const ENDPOINT_LINE_REGEX = /^\s*([A-Za-z]+)\s+(\S+)\s*$/;
 const API_FENCE_LANGUAGES = new Set(["", "txt", "text", "api", "http", "rest"]);
+const SHELL_FENCE_LANGUAGES = new Set([
+  "bash",
+  "sh",
+  "shell",
+  "shell-session",
+  "shellsession",
+  "zsh",
+  "fish",
+  "console",
+  "terminal",
+]);
 
 type AssistantMessageLike = {
   content?: unknown;
@@ -89,8 +101,45 @@ function applyIndent(text: string, indent: string): string {
   return text.split("\n").map((line) => `${indent}${line}`).join("\n");
 }
 
+function getLeadingWhitespace(line: string): string {
+  return /^[ \t]*/.exec(line)?.[0] ?? "";
+}
+
+function commonWhitespacePrefix(lines: string[]): string {
+  let common: string | undefined;
+
+  for (const line of lines) {
+    if (!line.trim()) continue;
+
+    const whitespace = getLeadingWhitespace(line);
+    if (common === undefined) {
+      common = whitespace;
+      continue;
+    }
+
+    let index = 0;
+    while (index < common.length && index < whitespace.length && common[index] === whitespace[index]) {
+      index += 1;
+    }
+
+    common = common.slice(0, index);
+    if (!common) break;
+  }
+
+  return common ?? "";
+}
+
+function removeCommonLeadingWhitespace(code: string): string {
+  const normalizedCode = code.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+  const lines = normalizedCode.split("\n");
+  const common = commonWhitespacePrefix(lines);
+  if (!common) return code;
+
+  return lines.map((line) => (line.trim() ? line.slice(common.length) : "")).join("\n");
+}
+
 export function transformApiEndpointFences(markdown: string): string {
-  return markdown.replace(ENDPOINT_FENCE_REGEX, (match, leadingNewline: string, indent: string, info: string, code: string) => {
+  return markdown.replace(MARKDOWN_FENCE_REGEX, (match, leadingNewline: string, indent: string, info: string, code: string) => {
     const language = getFenceLanguage(info);
     if (!API_FENCE_LANGUAGES.has(language)) return match;
 
@@ -99,6 +148,63 @@ export function transformApiEndpointFences(markdown: string): string {
 
     return `${leadingNewline}${applyIndent(renderApiEndpointTable(endpoints), indent)}`;
   });
+}
+
+export function transformShellCommandFences(markdown: string): string {
+  return markdown.replace(MARKDOWN_FENCE_REGEX, (match, leadingNewline: string, indent: string, info: string, code: string) => {
+    const language = getFenceLanguage(info);
+    if (!SHELL_FENCE_LANGUAGES.has(language)) return match;
+
+    const dedentedCode = removeCommonLeadingWhitespace(code);
+    if (dedentedCode === code) return match;
+
+    return `${leadingNewline}${indent}\`\`\`${info}\n${dedentedCode}\n${indent}\`\`\``;
+  });
+}
+
+export function transformAssistantMarkdown(markdown: string): string {
+  return transformShellCommandFences(transformApiEndpointFences(markdown));
+}
+
+type MarkdownThemeLike = Record<string, unknown> & {
+  codeBlockBorder?: (text: string) => string;
+  codeBlockIndent?: string;
+  [AMP_CODE_BLOCK_THEME]?: true;
+};
+
+function renderCodeBlockBorderLabel(borderText: string, isClosing: boolean): string {
+  if (isClosing) return "╰─";
+
+  const info = borderText.slice(3).trim();
+  const language = info.split(/\s+/)[0] || "code";
+  return `╭─ ${language}`;
+}
+
+export function withCopyableCodeBlockIndent<T extends MarkdownThemeLike>(markdownTheme: T): T & { codeBlockIndent: "" } {
+  if (markdownTheme[AMP_CODE_BLOCK_THEME] === true && markdownTheme.codeBlockIndent === "") {
+    return markdownTheme as T & { codeBlockIndent: "" };
+  }
+
+  const originalCodeBlockBorder = markdownTheme.codeBlockBorder?.bind(markdownTheme) ?? ((text: string) => text);
+  let insideCodeBlock = false;
+
+  return {
+    ...markdownTheme,
+    [AMP_CODE_BLOCK_THEME]: true,
+    codeBlockIndent: "",
+    codeBlockBorder: (text: string) => {
+      if (!text.startsWith("```")) return originalCodeBlockBorder(text);
+
+      const isClosing = insideCodeBlock;
+      insideCodeBlock = !insideCodeBlock;
+      return originalCodeBlockBorder(renderCodeBlockBorderLabel(text, isClosing));
+    },
+  };
+}
+
+function applyCopyableCodeBlockTheme(renderContext: unknown): void {
+  if (!isRecord(renderContext) || !isRecord(renderContext.markdownTheme)) return;
+  renderContext.markdownTheme = withCopyableCodeBlockIndent(renderContext.markdownTheme);
 }
 
 function transformAssistantMessage(message: unknown): unknown {
@@ -111,7 +217,7 @@ function transformAssistantMessage(message: unknown): unknown {
   const transformedContent = content.map((part) => {
     if (!isTextContent(part)) return part;
 
-    const text = transformApiEndpointFences(part.text);
+    const text = transformAssistantMarkdown(part.text);
     if (text === part.text) return part;
 
     changed = true;
@@ -143,6 +249,7 @@ function patchAssistantMessageRender(): void {
 
   const original = prototype.__ampAssistantMarkdownOriginalUpdateContent ?? currentUpdateContent;
   const ampUpdateContent = function updateContentWithAmpAssistantMarkdown(this: unknown, message: unknown): void {
+    applyCopyableCodeBlockTheme(this);
     original.call(this, transformAssistantMessage(message));
   };
 
