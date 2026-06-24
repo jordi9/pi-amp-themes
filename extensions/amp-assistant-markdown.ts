@@ -158,7 +158,7 @@ export function transformShellCommandFences(markdown: string): string {
     const dedentedCode = removeCommonLeadingWhitespace(code);
     if (dedentedCode === code) return match;
 
-    return `${leadingNewline}${indent}\`\`\`${info}\n${dedentedCode}\n${indent}\`\`\``;
+    return `${leadingNewline}${indent}\`\`\`${info}\n${applyIndent(dedentedCode, indent)}\n${indent}\`\`\``;
   });
 }
 

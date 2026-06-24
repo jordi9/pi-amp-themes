@@ -52,6 +52,20 @@ test("preserves relative shell script indentation", () => {
   expect(transformShellCommandFences(input)).toBe(`\`\`\`bash\nif pnpm test; then\n  echo passed\nfi\n\`\`\``);
 });
 
+test("preserves nested shell fence structure while dedenting commands", () => {
+  const input = `2. **Interactive \`chloe dash\` manual smoke**\n   - From your normal terminal, run:\n\n   \`\`\`bash\n     chloe dash\n   \`\`\`\n\n   Verify Bun/OpenTUI path.`;
+
+  expect(transformShellCommandFences(input)).toBe(
+    `2. **Interactive \`chloe dash\` manual smoke**\n   - From your normal terminal, run:\n\n   \`\`\`bash\n   chloe dash\n   \`\`\`\n\n   Verify Bun/OpenTUI path.`,
+  );
+});
+
+test("leaves already aligned nested shell fences valid", () => {
+  const input = `2. **Interactive \`chloe dash\` manual smoke**\n   - From your normal terminal, run:\n\n   \`\`\`bash\n   chloe dash\n   \`\`\`\n\n   Verify Bun/OpenTUI path.`;
+
+  expect(transformShellCommandFences(input)).toBe(input);
+});
+
 test("leaves non-shell code fence indentation unchanged", () => {
   const input = `\`\`\`ts\n  const command = \"pnpm build\";\n\`\`\``;
 
