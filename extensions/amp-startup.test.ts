@@ -192,6 +192,19 @@ test("amp startup header frame fills the available wide terminal width", () => {
   expectLinesWithinWidth(lines, width);
 });
 
+test("amp startup header centers the wordmark on wide terminals", () => {
+  const header = new AmpStartupHeader(createThemeStub() as never, () => createSnapshot());
+  const width = 160;
+
+  const lines = header.render(width);
+  const wordmarkLine = lines.find((line) => line.includes("██   ██║"));
+
+  expect(wordmarkLine).toBeDefined();
+  expect(wordmarkLine?.search(/\S/)).toBe(20);
+  expect(visibleWidth(wordmarkLine ?? "")).toBe(width);
+  expectLinesWithinWidth(lines, width);
+});
+
 test("amp-dark startup title uses success color", () => {
   const calls: Array<{ color: string; text: string }> = [];
   const header = new AmpStartupHeader(createRecordingThemeStub(calls, "amp-dark") as never, () => createSnapshot());

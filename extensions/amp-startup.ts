@@ -626,7 +626,7 @@ export class AmpStartupHeader implements Component {
   }
 
   private headingLines(width: number): string[] {
-    return BRAND_WORDMARK.map((line, index) => truncateToWidth(styleBrandWordmarkLine(this.theme, line, index), width, ""));
+    return BRAND_WORDMARK.map((line, index) => centerToWidth(styleBrandWordmarkLine(this.theme, line, index), width));
   }
 
   private dashboardLines(snapshot: StartupSnapshot, innerWidth: number): string[] {
