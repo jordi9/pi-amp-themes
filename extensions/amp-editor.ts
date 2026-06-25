@@ -1,5 +1,6 @@
 import { CustomEditor, type ExtensionAPI, type ExtensionCommandContext, type ExtensionContext, type ReadonlyFooterDataProvider, type ThemeColor } from "@earendil-works/pi-coding-agent";
 import { truncateToWidth, visibleWidth, type AutocompleteItem, type AutocompleteProvider, type Component } from "@earendil-works/pi-tui";
+import { isKeyRelease, matchesKey, truncateToWidth, visibleWidth, type AutocompleteItem, type AutocompleteProvider, type Component } from "@earendil-works/pi-tui";
 import { BUILTIN_COMMAND_PALETTE_ITEMS, CommandPaletteOverlay, type CommandPaletteArgumentItem, type CommandPaletteItem, type CommandPaletteResult, stripAnsi } from "./amp-command-palette.js";
 import { execFileSync, spawnSync } from "node:child_process";
 import { homedir } from "node:os";
@@ -23,6 +24,10 @@ const WORKING_TOOLS = "Using tools";
 const FINISHED_STATUS_MS = 7000;
 const COPY_PROMPT_STATUS_MS = 3000;
 const COPY_PROMPT_SHORTCUT = "ctrl+shift+x";
+const ASK_USER_QUESTION_TOOL = "ask_user_question";
+const ASK_USER_QUESTION_COLLAPSE_KEY = "\x1d";
+const ASK_USER_QUESTION_COLLAPSE_ALIASES = ["ctrl+o"] as const;
+const ASK_USER_QUESTION_COLLAPSE_RAW_KEYS = new Set(["\x0f"]);
 const WAITING_NOTIFICATION_INTERVAL_MS = 650;
 const WAITING_NOTIFICATION_PULSE_MS = 60_000;
 const WAITING_NOTIFICATION_FRAMES = ["✦", "✧", "✶", "✧"] as const;
@@ -971,6 +976,7 @@ function isTuiContext(ctx: unknown): boolean {
 
 export default function (pi: ExtensionAPI) {
   const activeToolExecutions = new Set<string>();
+  const activeAskUserQuestionToolCalls = new Set<string>();
   let activeThinkingLevel = "off";
   let activeCtx: ExtensionContext | undefined;
   let activeTui: { requestRender(): void } | undefined;
@@ -996,6 +1002,36 @@ export default function (pi: ExtensionAPI) {
   let terminalFocusReportingEnabled = false;
 
   const requestRender = () => activeTui?.requestRender();
+  const isAskUserQuestionActive = () => activeAskUserQuestionToolCalls.size > 0;
+  const isAskUserQuestionCollapseAlias = (data: string): boolean => {
+    if (isKeyRelease(data)) return false;
+    if (ASK_USER_QUESTION_COLLAPSE_RAW_KEYS.has(data)) return true;
+    return ASK_USER_QUESTION_COLLAPSE_ALIASES.some((alias) => matchesKey(data, alias));
+  };
+  const installAskUserQuestionInputAliases = (tui: TuiWithInputListener) => {
+    if (askUserQuestionInputListenerTui === tui && askUserQuestionInputListenerCleanup) return;
+
+    askUserQuestionInputListenerCleanup?.();
+    askUserQuestionInputListenerCleanup = undefined;
+    askUserQuestionInputListenerTui = undefined;
+
+    if (!tui.addInputListener) return;
+
+    askUserQuestionInputListenerTui = tui;
+    askUserQuestionInputListenerCleanup = tui.addInputListener((data) => {
+      if (!isAskUserQuestionActive()) return;
+      if (!isAskUserQuestionCollapseAlias(data)) return;
+
+      const focused = (tui as FocusedComponentAccessor).focusedComponent;
+      if (focused?.handleInput) {
+        focused.handleInput(ASK_USER_QUESTION_COLLAPSE_KEY);
+        tui.requestRender();
+        return { consume: true };
+      }
+
+      return { data: ASK_USER_QUESTION_COLLAPSE_KEY };
+    });
+  };
   const getActiveWorkingAnimation = () => workingAnimation ?? DEFAULT_WORKING_ANIMATION;
   const getWaitingNotificationFrame = () => (
     WAITING_NOTIFICATION_FRAMES[Math.abs(waitingNotificationFrameIndex) % WAITING_NOTIFICATION_FRAMES.length]
@@ -1272,6 +1308,7 @@ export default function (pi: ExtensionAPI) {
 
     ctx.ui.setEditorComponent((tui, theme, keybindings) => {
       activeTui = tui;
+      installAskUserQuestionInputAliases(tui);
       return new AmpEditor(
         tui,
         theme,
@@ -1314,6 +1351,7 @@ export default function (pi: ExtensionAPI) {
   pi.on("before_agent_start", (_event, ctx) => {
     activeThinkingLevel = pi.getThinkingLevel();
     activeToolExecutions.clear();
+    activeAskUserQuestionToolCalls.clear();
     clearWaitingNotification();
     isWorking = true;
     workingAnimation = forcedWorkingAnimation ?? pickWorkingAnimation(workingAnimation);
@@ -1346,6 +1384,7 @@ export default function (pi: ExtensionAPI) {
 
   pi.on("tool_execution_start", (event, ctx) => {
     activeToolExecutions.add(event.toolCallId);
+    if (event.toolName === ASK_USER_QUESTION_TOOL) activeAskUserQuestionToolCalls.add(event.toolCallId);
     if (!ctx.hasUI) return;
     setWorkingMessage(WORKING_TOOLS, ctx);
   });
@@ -1357,6 +1396,7 @@ export default function (pi: ExtensionAPI) {
 
   pi.on("tool_execution_end", (event, ctx) => {
     activeToolExecutions.delete(event.toolCallId);
+    if (event.toolName === ASK_USER_QUESTION_TOOL) activeAskUserQuestionToolCalls.delete(event.toolCallId);
     if (!ctx.hasUI) return;
     if (activeToolExecutions.size === 0) {
       setWorkingMessage(WORKING_WAITING, ctx);
@@ -1370,6 +1410,7 @@ export default function (pi: ExtensionAPI) {
     finishedPromptStatus = cancelled ? "cancelled" : "finished";
     promptStartedAt = undefined;
     activeToolExecutions.clear();
+    activeAskUserQuestionToolCalls.clear();
     stopWorkingTimer();
     if (finishedPromptElapsedMs !== undefined) startFinishedStatusTimer();
     if (!cancelled && ctx.hasUI) {
@@ -1395,6 +1436,10 @@ export default function (pi: ExtensionAPI) {
     waitingNotificationFrameIndex = 0;
     copyPromptStatus = undefined;
     workingAnimation = undefined;
+    activeAskUserQuestionToolCalls.clear();
+    askUserQuestionInputListenerCleanup?.();
+    askUserQuestionInputListenerCleanup = undefined;
+    askUserQuestionInputListenerTui = undefined;
     activeTui = undefined;
     activeFooterData = undefined;
   });

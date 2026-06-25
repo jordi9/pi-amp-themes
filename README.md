@@ -27,6 +27,7 @@ If `npm:pi-tool-display` is installed separately, remove it. `amp-themes` alread
 - Amp-style editor chrome with context, fun high-context warnings, cost, model, thinking level, cwd, branch, git change summary, slash command palette, and a focused `/skills` palette
 - `Ctrl+Shift+X` to copy the current prompt editor text to the system clipboard with a transient editor status
 - Working status integrated into the editor status row, with a random per-prompt animation, elapsed prompt time after `Esc to cancel`, a 7-second finished/cancelled timer, a pulsing ready star before the context usage plus flashing editor chrome and terminal bell after successful agent turns, and git changes kept on the right
+- `Ctrl+O` to collapse/expand `rpiv-ask-user-question` dialogs while that tool is active, mirroring its `Ctrl+]` toggle for keyboard layouts where `]` is awkward
 - Compact Amp-style user messages with thinking-level color sync
 - Display-only assistant Markdown enhancements that turn HTTP endpoint `txt` fences into route tables and render copy-pasteable, lightly styled shell fences
 - Bundled `pi-tool-display`
