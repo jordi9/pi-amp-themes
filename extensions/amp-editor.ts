@@ -7,7 +7,7 @@ import { relative } from "node:path";
 
 const MIN_BODY_LINES = 2;
 const EDITOR_TEXT_LEFT_INSET = 1;
-const GIT_CACHE_MS = 2000;
+const VCS_CACHE_MS = 2000;
 const STATUS_LEFT_INSET = 1;
 const STATUS_RIGHT_INSET = 1;
 export type WorkingAnimation = {
@@ -31,6 +31,7 @@ const TERMINAL_FOCUS_OUT = "\x1b[O";
 const TERMINAL_FOCUS_REPORTING_ENABLE = "\x1b[?1004h";
 const TERMINAL_FOCUS_REPORTING_DISABLE = "\x1b[?1004l";
 const TERMINAL_BELL = "\x07";
+const VCS_CHANGED_FILES_ICON = "✎";
 
 // Compact, single-line animations for the editor status row. Inspired by
 // Hermes' grab-bag of spinners while keeping most frames narrow enough that
@@ -68,8 +69,10 @@ type WaitingNotificationState = {
   chromeColor: ThemeColor;
 };
 
-type GitInfo = {
+export type VcsInfo = {
+  kind: "git" | "jj";
   branch: string | null;
+  description: string | null;
   changedFiles: number;
   added: number;
   modified: number;
@@ -99,11 +102,14 @@ type ShortcutRegistrar = {
   }) => void;
 };
 
-let gitCache: { cwd: string; at: number; info: GitInfo } | undefined;
+let vcsCache: { cwd: string; at: number; info: VcsInfo } | undefined;
 
-function runGit(cwd: string, args: string[]): string {
+type DiffCounts = Pick<VcsInfo, "added" | "modified" | "removed">;
+type Colorize = (color: ThemeColor, text: string) => string;
+
+function runCommand(command: string, cwd: string, args: string[]): string {
   try {
-    return execFileSync("git", args, {
+    return execFileSync(command, args, {
       cwd,
       encoding: "utf8",
       stdio: ["ignore", "pipe", "ignore"],
@@ -114,14 +120,52 @@ function runGit(cwd: string, args: string[]): string {
   }
 }
 
-function getGitInfo(cwd: string): GitInfo {
-  const now = Date.now();
-  if (gitCache && gitCache.cwd === cwd && now - gitCache.at < GIT_CACHE_MS) return gitCache.info;
+function runGit(cwd: string, args: string[]): string {
+  return runCommand("git", cwd, args);
+}
 
-  const branch = runGit(cwd, ["branch", "--show-current"]) || null;
-  const porcelain = runGit(cwd, ["status", "--short"]);
-  const changedFiles = porcelain ? porcelain.split("\n").filter(Boolean).length : 0;
-  const numstat = runGit(cwd, ["diff", "--numstat"]);
+function runJj(cwd: string, args: string[]): string {
+  return runCommand("jj", cwd, ["--color", "never", ...args]);
+}
+
+function countOutputLines(output: string): number {
+  return output ? output.split("\n").filter((line) => line.trim().length > 0).length : 0;
+}
+
+function splitLineChanges(added: number, removed: number): DiffCounts {
+  const modified = Math.min(added, removed);
+  return { added: added - modified, modified, removed: removed - modified };
+}
+
+function countFromMatch(text: string, pattern: RegExp): number {
+  const match = text.match(pattern);
+  if (!match) return 0;
+
+  const value = Number(match[1]);
+  return Number.isFinite(value) ? value : 0;
+}
+
+export function normalizeJjDescription(description: string): string | null {
+  const firstLine = description.split(/\r?\n/).find((line) => line.trim().length > 0)?.trim() ?? "";
+  if (!firstLine || firstLine === "(no description set)" || firstLine === "no description set") return null;
+  return firstLine;
+}
+
+export function parseDiffStatSummary(stat: string): DiffCounts {
+  const summary = stat
+    .trim()
+    .split(/\r?\n/)
+    .reverse()
+    .find((line) => /\bfiles? changed\b/.test(line));
+
+  if (!summary) return { added: 0, modified: 0, removed: 0 };
+
+  const added = countFromMatch(summary, /(\d+)\s+insertions?\(\+\)/);
+  const removed = countFromMatch(summary, /(\d+)\s+deletions?\(-\)/);
+  return splitLineChanges(added, removed);
+}
+
+function parseGitNumstat(numstat: string): DiffCounts {
   let added = 0;
   let removed = 0;
 
@@ -133,10 +177,52 @@ function getGitInfo(cwd: string): GitInfo {
     if (Number.isFinite(rem)) removed += rem;
   }
 
-  const modified = Math.min(added, removed);
-  const info = { branch, changedFiles, added: added - modified, modified, removed: removed - modified };
-  gitCache = { cwd, at: now, info };
+  return splitLineChanges(added, removed);
+}
+
+function getGitInfo(cwd: string): VcsInfo {
+  const branch = runGit(cwd, ["branch", "--show-current"]) || null;
+  const porcelain = runGit(cwd, ["status", "--short"]);
+  const changedFiles = countOutputLines(porcelain);
+  const counts = parseGitNumstat(runGit(cwd, ["diff", "--numstat"]));
+
+  return { kind: "git", branch, description: null, changedFiles, ...counts };
+}
+
+function getJjInfo(cwd: string): VcsInfo {
+  const description = normalizeJjDescription(runJj(cwd, ["log", "--no-graph", "-r", "@", "-T", "description.first_line()"]))
+    ?? null;
+  const changedFiles = countOutputLines(runJj(cwd, ["diff", "--name-only"]));
+  const counts = parseDiffStatSummary(runJj(cwd, ["diff", "--stat"]));
+
+  return { kind: "jj", branch: null, description, changedFiles, ...counts };
+}
+
+function getVcsInfo(cwd: string): VcsInfo {
+  const now = Date.now();
+  if (vcsCache && vcsCache.cwd === cwd && now - vcsCache.at < VCS_CACHE_MS) return vcsCache.info;
+
+  const info = runJj(cwd, ["root"]) ? getJjInfo(cwd) : getGitInfo(cwd);
+  vcsCache = { cwd, at: now, info };
   return info;
+}
+
+export function formatVcsChangesLabel(info: VcsInfo, colorize: Colorize = (_color, text) => text): string {
+  const parts: string[] = [];
+
+  if (info.kind === "jj" && info.description) {
+    parts.push(colorize("muted", info.description));
+  }
+
+  if (info.changedFiles > 0) {
+    const fileLabel = colorize("syntaxNumber", `${VCS_CHANGED_FILES_ICON}${info.changedFiles}`);
+    const added = info.added > 0 ? ` ${colorize("toolDiffAdded", `+${info.added}`)}` : "";
+    const modified = info.modified > 0 ? ` ${colorize("warning", `~${info.modified}`)}` : "";
+    const removed = info.removed > 0 ? ` ${colorize("toolDiffRemoved", `-${info.removed}`)}` : "";
+    parts.push(`${fileLabel}${added}${modified}${removed}`);
+  }
+
+  return parts.join(` ${colorize("muted", "·")} `);
 }
 
 function clipboardCandidates(): ClipboardCommand[] {
@@ -518,7 +604,7 @@ class AmpEditor extends CustomEditor {
     const extensionStatusLabel = this.getExtensionStatusLabel();
     const outputExpandedLabel = this.getOutputExpandedLabel();
     const copyPromptLabel = this.getCopyPromptLabel();
-    const gitChangesLabel = this.getGitChangesLabel();
+    const vcsChangesLabel = this.getVcsChangesLabel();
     const leftStatusLabel = joinStatusLabels([
       workingLabel,
       extensionStatusLabel,
@@ -530,7 +616,7 @@ class AmpEditor extends CustomEditor {
       this.borderWithLabels(width, leftTop, rightTop),
       ...body.map((line) => this.wrapBody(line, innerWidth)),
       this.borderWithCenterThenPath(width, CENTER_TEXT, cwdLabel),
-      ...this.statusRows(width, leftStatusLabel, gitChangesLabel),
+      ...this.statusRows(width, leftStatusLabel, vcsChangesLabel),
       ...this.wrapPopupBlock(popupLines, width),
     ];
   }
@@ -613,8 +699,8 @@ class AmpEditor extends CustomEditor {
   }
 
   private getCwdLabel(): string {
-    const git = getGitInfo(this.ctx.cwd);
-    return ` ${compactPath(this.ctx.cwd)}${git.branch ? ` (${git.branch})` : ""} `;
+    const vcs = getVcsInfo(this.ctx.cwd);
+    return ` ${compactPath(this.ctx.cwd)}${vcs.branch ? ` (${vcs.branch})` : ""} `;
   }
 
   private getWorkingLabel(): string {
@@ -659,15 +745,8 @@ class AmpEditor extends CustomEditor {
     }
   }
 
-  private getGitChangesLabel(): string {
-    const git = getGitInfo(this.ctx.cwd);
-    if (git.changedFiles === 0) return "";
-
-    const fileLabel = this.fg("muted", `${git.changedFiles} ${git.changedFiles === 1 ? "file" : "files"} changed`);
-    const added = git.added > 0 ? ` ${this.fg("toolDiffAdded", `+${git.added}`)}` : "";
-    const modified = git.modified > 0 ? ` ${this.fg("warning", `~${git.modified}`)}` : "";
-    const removed = git.removed > 0 ? ` ${this.fg("toolDiffRemoved", `-${git.removed}`)}` : "";
-    return `${fileLabel}${added}${modified}${removed}`;
+  private getVcsChangesLabel(): string {
+    return formatVcsChangesLabel(getVcsInfo(this.ctx.cwd), (color, text) => this.fg(color, text));
   }
 
   private fg(color: ThemeColor, text: string): string {
