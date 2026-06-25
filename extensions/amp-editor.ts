@@ -23,6 +23,14 @@ const WORKING_TOOLS = "Using tools";
 const FINISHED_STATUS_MS = 7000;
 const COPY_PROMPT_STATUS_MS = 3000;
 const COPY_PROMPT_SHORTCUT = "ctrl+shift+x";
+const WAITING_NOTIFICATION_INTERVAL_MS = 650;
+const WAITING_NOTIFICATION_PULSE_MS = 60_000;
+const WAITING_NOTIFICATION_FRAMES = ["✦", "✧", "✶", "✧"] as const;
+const TERMINAL_FOCUS_IN = "\x1b[I";
+const TERMINAL_FOCUS_OUT = "\x1b[O";
+const TERMINAL_FOCUS_REPORTING_ENABLE = "\x1b[?1004h";
+const TERMINAL_FOCUS_REPORTING_DISABLE = "\x1b[?1004l";
+const TERMINAL_BELL = "\x07";
 
 // Compact, single-line animations for the editor status row. Inspired by
 // Hermes' grab-bag of spinners while keeping most frames narrow enough that
@@ -52,6 +60,12 @@ type WorkingState = {
   elapsedMs: number | undefined;
   finishedElapsedMs: number | undefined;
   finishedStatus: FinishedStatus;
+};
+
+type WaitingNotificationState = {
+  active: boolean;
+  frame: string;
+  chromeColor: ThemeColor;
 };
 
 type GitInfo = {
@@ -386,6 +400,8 @@ function getWorkingAnimationCompletions(prefix: string): AutocompleteItem[] | nu
 }
 
 class AmpEditor extends CustomEditor {
+  private editorFocused = false;
+
   constructor(
     tui: any,
     theme: any,
@@ -393,8 +409,10 @@ class AmpEditor extends CustomEditor {
     private readonly getCtx: () => ExtensionContext,
     private readonly getThinkingLevel: () => string,
     private readonly getWorkingState: () => WorkingState,
+    private readonly getWaitingNotificationState: () => WaitingNotificationState,
     private readonly getExtensionStatus: () => string,
     private readonly getCopyPromptStatus: () => CopyPromptStatus | undefined,
+    private readonly dismissWaitingNotification: () => void,
     private readonly openCommandPalette: (
       initialQuery: string | undefined,
       onSelect: (result: CommandPaletteResult) => void,
@@ -402,6 +420,17 @@ class AmpEditor extends CustomEditor {
     ) => void,
   ) {
     super(tui, theme, keybindings, { paddingX: 0 });
+    this.editorFocused = Boolean(this.focused);
+    Object.defineProperty(this, "focused", {
+      configurable: true,
+      enumerable: true,
+      get: () => this.editorFocused,
+      set: (value: boolean) => {
+        const wasFocused = this.editorFocused;
+        this.editorFocused = value;
+        if (value && !wasFocused) this.dismissWaitingNotification();
+      },
+    });
   }
 
   private get ctx(): ExtensionContext {
@@ -409,6 +438,15 @@ class AmpEditor extends CustomEditor {
   }
 
   handleInput(data: string): void {
+    if (data === TERMINAL_FOCUS_IN) {
+      this.dismissWaitingNotification();
+      return;
+    }
+
+    if (data === TERMINAL_FOCUS_OUT) return;
+
+    this.dismissWaitingNotification();
+
     if (data === "/" && !this.isShowingAutocomplete()) {
       const preservePrompt = this.getText().trim() !== "";
       this.openCommandPalette(undefined, (result) => {
@@ -501,7 +539,9 @@ class AmpEditor extends CustomEditor {
     const usage = this.ctx.getContextUsage();
     const pct = usage?.percent == null ? "?" : `${Math.max(0, Math.floor(usage.percent))}%`;
     const contextWindow = usage?.contextWindow ?? this.ctx.model?.contextWindow ?? null;
-    const parts = [this.fg("muted", ` ${pct} of ${formatCount(contextWindow)}`)];
+    const notification = this.getWaitingNotificationState();
+    const readyStar = notification.active ? `${this.fg("accent", notification.frame)} ` : "";
+    const parts = [` ${readyStar}${this.fg("muted", `${pct} of ${formatCount(contextWindow)}`)}`];
     const warning = getContextWarning(usage?.percent);
 
     if (warning) {
@@ -672,6 +712,8 @@ class AmpEditor extends CustomEditor {
   }
 
   private promptBorderColor(text: string): string {
+    const notification = this.getWaitingNotificationState();
+    if (notification.active) return this.fg(notification.chromeColor, text);
     return this.fg("thinkingLow", text);
   }
 
@@ -844,6 +886,10 @@ async function openSkillsPalette(pi: ExtensionAPI, initialQuery: string, ctx: Ex
   ctx.ui.setEditorText(`/skill:${skillName} `);
 }
 
+function isTuiContext(ctx: unknown): boolean {
+  return typeof ctx === "object" && ctx !== null && (ctx as { mode?: unknown }).mode === "tui";
+}
+
 export default function (pi: ExtensionAPI) {
   const activeToolExecutions = new Set<string>();
   let activeThinkingLevel = "off";
@@ -860,13 +906,89 @@ export default function (pi: ExtensionAPI) {
   let promptStartedAt: number | undefined;
   let finishedPromptElapsedMs: number | undefined;
   let finishedPromptStatus: FinishedStatus = "finished";
+  let waitingNotificationActive = false;
+  let waitingNotificationStartedAt: number | undefined;
+  let waitingNotificationFrameIndex = 0;
   let copyPromptStatus: CopyPromptStatus | undefined;
   let workingTimer: ReturnType<typeof setInterval> | undefined;
+  let waitingNotificationTimer: ReturnType<typeof setInterval> | undefined;
   let finishedStatusTimer: ReturnType<typeof setTimeout> | undefined;
   let copyPromptStatusTimer: ReturnType<typeof setTimeout> | undefined;
+  let terminalFocusReportingEnabled = false;
 
   const requestRender = () => activeTui?.requestRender();
   const getActiveWorkingAnimation = () => workingAnimation ?? DEFAULT_WORKING_ANIMATION;
+  const getWaitingNotificationFrame = () => (
+    WAITING_NOTIFICATION_FRAMES[Math.abs(waitingNotificationFrameIndex) % WAITING_NOTIFICATION_FRAMES.length]
+    ?? WAITING_NOTIFICATION_FRAMES[0]
+  );
+  const getWaitingNotificationChromeColor = (): ThemeColor => (
+    waitingNotificationFrameIndex % 2 === 0 ? "warning" : "thinkingLow"
+  );
+
+  const enableTerminalFocusReporting = () => {
+    if (terminalFocusReportingEnabled || !process.stdout.isTTY) return;
+    process.stdout.write(TERMINAL_FOCUS_REPORTING_ENABLE);
+    terminalFocusReportingEnabled = true;
+  };
+
+  const disableTerminalFocusReporting = () => {
+    if (!terminalFocusReportingEnabled || !process.stdout.isTTY) return;
+    process.stdout.write(TERMINAL_FOCUS_REPORTING_DISABLE);
+    terminalFocusReportingEnabled = false;
+  };
+
+  const ringTerminalBell = (ctx: ExtensionContext) => {
+    if (!process.stdout.isTTY || !isTuiContext(ctx)) return;
+    process.stdout.write(TERMINAL_BELL);
+  };
+
+  const stopWaitingNotificationTimer = () => {
+    if (!waitingNotificationTimer) return;
+    clearInterval(waitingNotificationTimer);
+    waitingNotificationTimer = undefined;
+  };
+
+  const startWaitingNotificationTimer = () => {
+    stopWaitingNotificationTimer();
+    waitingNotificationTimer = setInterval(() => {
+      if (!waitingNotificationActive) {
+        stopWaitingNotificationTimer();
+        return;
+      }
+
+      if (
+        waitingNotificationStartedAt !== undefined
+        && Date.now() - waitingNotificationStartedAt >= WAITING_NOTIFICATION_PULSE_MS
+      ) {
+        waitingNotificationFrameIndex = 0;
+        stopWaitingNotificationTimer();
+        requestRender();
+        return;
+      }
+
+      waitingNotificationFrameIndex = (waitingNotificationFrameIndex + 1) % WAITING_NOTIFICATION_FRAMES.length;
+      requestRender();
+    }, WAITING_NOTIFICATION_INTERVAL_MS);
+    waitingNotificationTimer.unref?.();
+  };
+
+  const clearWaitingNotification = () => {
+    stopWaitingNotificationTimer();
+    if (!waitingNotificationActive) return;
+    waitingNotificationActive = false;
+    waitingNotificationStartedAt = undefined;
+    waitingNotificationFrameIndex = 0;
+    requestRender();
+  };
+
+  const showWaitingNotification = () => {
+    waitingNotificationActive = true;
+    waitingNotificationStartedAt = Date.now();
+    waitingNotificationFrameIndex = 0;
+    startWaitingNotificationTimer();
+    requestRender();
+  };
 
   const stopWorkingTimer = () => {
     if (!workingTimer) return;
@@ -1059,6 +1181,8 @@ export default function (pi: ExtensionAPI) {
   pi.on("session_start", (_event, ctx) => {
     if (!ctx.hasUI) return;
 
+    if (isTuiContext(ctx)) enableTerminalFocusReporting();
+
     activeCtx = ctx;
     activeThinkingLevel = pi.getThinkingLevel();
 
@@ -1069,14 +1193,30 @@ export default function (pi: ExtensionAPI) {
 
     ctx.ui.setEditorComponent((tui, theme, keybindings) => {
       activeTui = tui;
-      return new AmpEditor(tui, theme, keybindings, () => activeCtx ?? ctx, () => activeThinkingLevel, () => ({
-        active: isWorking,
-        message: workingMessage,
-        frame: getWorkingAnimationFrame(getActiveWorkingAnimation(), workingFrameIndex),
-        elapsedMs: promptStartedAt === undefined ? undefined : Date.now() - promptStartedAt,
-        finishedElapsedMs: finishedPromptElapsedMs,
-        finishedStatus: finishedPromptStatus,
-      }), () => activeFooterData ? formatExtensionStatuses(activeFooterData.getExtensionStatuses()) : "", () => copyPromptStatus, openCommandPalette);
+      return new AmpEditor(
+        tui,
+        theme,
+        keybindings,
+        () => activeCtx ?? ctx,
+        () => activeThinkingLevel,
+        () => ({
+          active: isWorking,
+          message: workingMessage,
+          frame: getWorkingAnimationFrame(getActiveWorkingAnimation(), workingFrameIndex),
+          elapsedMs: promptStartedAt === undefined ? undefined : Date.now() - promptStartedAt,
+          finishedElapsedMs: finishedPromptElapsedMs,
+          finishedStatus: finishedPromptStatus,
+        }),
+        () => ({
+          active: waitingNotificationActive,
+          frame: getWaitingNotificationFrame(),
+          chromeColor: getWaitingNotificationChromeColor(),
+        }),
+        () => activeFooterData ? formatExtensionStatuses(activeFooterData.getExtensionStatuses()) : "",
+        () => copyPromptStatus,
+        clearWaitingNotification,
+        openCommandPalette,
+      );
     });
 
     hideBuiltInWorking(ctx);
@@ -1095,6 +1235,7 @@ export default function (pi: ExtensionAPI) {
   pi.on("before_agent_start", (_event, ctx) => {
     activeThinkingLevel = pi.getThinkingLevel();
     activeToolExecutions.clear();
+    clearWaitingNotification();
     isWorking = true;
     workingAnimation = forcedWorkingAnimation ?? pickWorkingAnimation(workingAnimation);
     clearFinishedStatus();
@@ -1143,24 +1284,36 @@ export default function (pi: ExtensionAPI) {
     }
   });
 
-  pi.on("agent_end", (event, _ctx) => {
+  pi.on("agent_end", (event, ctx) => {
+    const cancelled = isCancelledAgentEnd(event);
     isWorking = false;
     finishedPromptElapsedMs = promptStartedAt === undefined ? undefined : Date.now() - promptStartedAt;
-    finishedPromptStatus = isCancelledAgentEnd(event) ? "cancelled" : "finished";
+    finishedPromptStatus = cancelled ? "cancelled" : "finished";
     promptStartedAt = undefined;
     activeToolExecutions.clear();
     stopWorkingTimer();
     if (finishedPromptElapsedMs !== undefined) startFinishedStatusTimer();
+    if (!cancelled && ctx.hasUI) {
+      ringTerminalBell(ctx);
+      showWaitingNotification();
+    } else {
+      clearWaitingNotification();
+    }
     requestRender();
   });
 
   pi.on("session_shutdown", () => {
+    disableTerminalFocusReporting();
     stopWorkingTimer();
+    stopWaitingNotificationTimer();
     stopFinishedStatusTimer();
     clearCopyPromptStatus();
     promptStartedAt = undefined;
     finishedPromptElapsedMs = undefined;
     finishedPromptStatus = "finished";
+    waitingNotificationActive = false;
+    waitingNotificationStartedAt = undefined;
+    waitingNotificationFrameIndex = 0;
     copyPromptStatus = undefined;
     workingAnimation = undefined;
     activeTui = undefined;
