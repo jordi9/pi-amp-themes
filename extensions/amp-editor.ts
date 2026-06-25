@@ -29,7 +29,7 @@ const ASK_USER_QUESTION_COLLAPSE_ALIASES = ["ctrl+o"] as const;
 const ASK_USER_QUESTION_COLLAPSE_RAW_KEYS = new Set(["\x0f"]);
 const WAITING_NOTIFICATION_INTERVAL_MS = 650;
 const WAITING_NOTIFICATION_PULSE_MS = 60_000;
-const WAITING_NOTIFICATION_FRAMES = ["✦", "✧", "✶", "✧"] as const;
+const WAITING_NOTIFICATION_FRAMES = ["", ""] as const;
 export const AMP_WAITING_NOTIFICATION_EVENT = "amp:waiting_notification";
 const TERMINAL_FOCUS_IN = "\x1b[I";
 const TERMINAL_FOCUS_OUT = "\x1b[O";
@@ -660,8 +660,8 @@ class AmpEditor extends CustomEditor {
     const pct = usage?.percent == null ? "?" : `${Math.max(0, Math.floor(usage.percent))}%`;
     const contextWindow = usage?.contextWindow ?? this.ctx.model?.contextWindow ?? null;
     const notification = this.getWaitingNotificationState();
-    const readyStar = notification.active ? `${this.fg("accent", notification.frame)} ` : "";
-    const parts = [` ${readyStar}${this.fg("muted", `${pct} of ${formatCount(contextWindow)}`)}`];
+    const notificationIcon = notification.active ? `${this.fg("accent", notification.frame)} ` : "";
+    const parts = [` ${notificationIcon}${this.fg("muted", `${pct} of ${formatCount(contextWindow)}`)}`];
     const warning = getContextWarning(usage?.percent);
 
     if (warning) {

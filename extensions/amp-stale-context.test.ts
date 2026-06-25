@@ -564,7 +564,7 @@ test("amp editor keeps finished elapsed time visible briefly after agent end", (
   }
 });
 
-test("amp editor only shows the ready star when the terminal is already unfocused", () => {
+test("amp editor only shows the notification icon when the terminal is already unfocused", () => {
   vi.useFakeTimers();
   vi.setSystemTime(1_000);
   const { pi, handlers } = createPiStub(() => "medium");
@@ -617,7 +617,7 @@ test("amp editor only shows the ready star when the terminal is already unfocuse
     vi.setSystemTime(66_000);
     agentEnd({ type: "agent_end", messages: [] }, ctx);
 
-    expect(editor.render(200).join("\n")).not.toContain("✦ 12% of 200k");
+    expect(editor.render(200).join("\n")).not.toContain(" 12% of 200k");
 
     vi.setSystemTime(70_000);
     beforeAgentStart({ type: "before_agent_start" }, ctx);
@@ -626,12 +626,12 @@ test("amp editor only shows the ready star when the terminal is already unfocuse
     agentEnd({ type: "agent_end", messages: [] }, ctx);
 
     const waitingRender = editor.render(200);
-    expect(waitingRender[0]).toContain("✦ 12% of 200k");
+    expect(waitingRender[0]).toContain(" 12% of 200k");
     expect(waitingRender[0]).not.toContain("Agent is ready");
     expect(waitingRender[0]).not.toContain("Enter");
 
     editor.handleInput("\x1b[I");
-    expect(editor.render(200).join("\n")).not.toContain("✦ 12% of 200k");
+    expect(editor.render(200).join("\n")).not.toContain(" 12% of 200k");
 
     vi.setSystemTime(80_000);
     beforeAgentStart({ type: "before_agent_start" }, ctx);
@@ -640,7 +640,7 @@ test("amp editor only shows the ready star when the terminal is already unfocuse
     agentEnd({ type: "agent_end", messages: [] }, ctx);
     editor.handleInput("a");
 
-    expect(editor.render(200).join("\n")).not.toContain("✦ 12% of 200k");
+    expect(editor.render(200).join("\n")).not.toContain(" 12% of 200k");
   } finally {
     handlers.get("session_shutdown")?.({ type: "session_shutdown", reason: "quit" }, ctx);
     vi.useRealTimers();
@@ -765,7 +765,7 @@ test("amp editor renders cancelled elapsed time after aborted agent end", () => 
     const rendered = editor.render(200).join("\n");
     expect(rendered).toContain("Cancelled · 1m 5s");
     expect(rendered).not.toContain("Finished");
-    expect(rendered).not.toContain("✦ 12% of 200k");
+    expect(rendered).not.toContain(" 12% of 200k");
   } finally {
     handlers.get("session_shutdown")?.({ type: "session_shutdown", reason: "quit" }, ctx);
     vi.useRealTimers();
