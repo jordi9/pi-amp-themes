@@ -15,7 +15,7 @@ export interface CommandPaletteItem {
 
 export interface CommandPaletteResult {
   command: string;
-  action: "insert" | "submit";
+  action: "insert" | "submit" | "literal";
 }
 
 export interface CommandPaletteArgumentItem {
@@ -36,6 +36,8 @@ export interface CommandPaletteOverlayOptions {
   descriptionLines?: number;
   selectedDescriptionLines?: number;
   hideArgumentSource?: boolean;
+  literalSlashEscape?: boolean;
+  submitOnEnter?: boolean;
 }
 
 type PaletteRenderItem = {
@@ -175,6 +177,11 @@ export class CommandPaletteOverlay implements Component {
       return;
     }
 
+    if (this.options.literalSlashEscape && data === "/" && !this.argumentCommand && this.query.length === 0) {
+      this.done({ command: "/", action: "literal" });
+      return;
+    }
+
     if (this.keybindings.matches(data, "tui.editor.deleteCharBackward") || matchesKey(data, Key.backspace)) {
       if (this.argumentCommand && this.query.length === 0) {
         this.query = this.argumentCommand.name;
@@ -246,7 +253,7 @@ export class CommandPaletteOverlay implements Component {
   }
 
   private async submitOrOpenArguments(selected: CommandPaletteItem): Promise<void> {
-    const action = getDefaultCommandAction(selected);
+    const action = this.options.submitOnEnter ? "submit" : getDefaultCommandAction(selected);
     if (action === "insert" || !this.getArgumentCompletions) {
       this.done({ command: selected.name, action });
       return;
@@ -277,7 +284,7 @@ export class CommandPaletteOverlay implements Component {
       if (requestId !== this.argumentRequestId || this.argumentCommand !== command) return;
       const nextItems = dedupeArgumentItems(items ?? []);
       if (nextItems.length === 0 && fallbackToCommand) {
-        this.done({ command: command.name, action: getDefaultCommandAction(command) });
+        this.done({ command: command.name, action: this.options.submitOnEnter ? "submit" : getDefaultCommandAction(command) });
         return;
       }
 
@@ -288,7 +295,7 @@ export class CommandPaletteOverlay implements Component {
     }).catch(() => {
       if (requestId !== this.argumentRequestId || this.argumentCommand !== command) return;
       if (fallbackToCommand) {
-        this.done({ command: command.name, action: getDefaultCommandAction(command) });
+        this.done({ command: command.name, action: this.options.submitOnEnter ? "submit" : getDefaultCommandAction(command) });
         return;
       }
 

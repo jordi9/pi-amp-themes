@@ -203,6 +203,29 @@ test.each([
   expect(pickPaletteItem(item, "enter")).toEqual({ command: item.name, action: expectedAction });
 });
 
+test("command palette can make enter submit commands for empty prompts", () => {
+  let result: CommandPaletteResult | null | undefined;
+  const item = { name: "component", source: "prompt" } satisfies CommandPaletteItem;
+
+  new CommandPaletteOverlay([item], "", { requestRender() {} } as never, createThemeStub() as never, createPaletteKeybindings() as never, (value) => {
+    result = value;
+  }, undefined, { submitOnEnter: true }).handleInput("enter");
+
+  expect(result).toEqual({ command: item.name, action: "submit" });
+});
+
+test("command palette keeps submit-on-enter when argument lookup has no matches", async () => {
+  let result: CommandPaletteResult | null | undefined;
+  const item = { name: "component", source: "prompt" } satisfies CommandPaletteItem;
+
+  new CommandPaletteOverlay([item], "", { requestRender() {} } as never, createThemeStub() as never, createPaletteKeybindings() as never, (value) => {
+    result = value;
+  }, async () => null, { submitOnEnter: true }).handleInput("enter");
+  await flushPromises();
+
+  expect(result).toEqual({ command: item.name, action: "submit" });
+});
+
 test.each([
   { name: "settings", source: "builtin" },
   { name: "btw:new", source: "extension" },
@@ -276,6 +299,24 @@ test("command palette falls back to submitting commands without arguments", asyn
   expect(result).toEqual({ command: "settings", action: "submit" });
 });
 
+test("command palette can escape slash into a literal prompt slash", () => {
+  let result: CommandPaletteResult | null | undefined;
+  const overlay = new CommandPaletteOverlay(
+    [{ name: "settings", source: "builtin" }],
+    "",
+    { requestRender() {} } as never,
+    createThemeStub() as never,
+    createPaletteKeybindings() as never,
+    (value) => { result = value; },
+    undefined,
+    { literalSlashEscape: true },
+  );
+
+  overlay.handleInput("/");
+
+  expect(result).toEqual({ command: "/", action: "literal" });
+});
+
 test("submitting a command from the palette matches native slash completion", async () => {
   const editor = createAmpEditor({ command: "compact", action: "submit" });
   const onSubmit = vi.fn();
@@ -298,6 +339,42 @@ test("inserting a command from the palette leaves it editable without submitting
 
   expect(onSubmit).not.toHaveBeenCalled();
   expect(editor.getText()).toBe("/compact ");
+});
+
+test("command palette preserves existing prompt instead of submitting over it", async () => {
+  const editor = createAmpEditor({ command: "compact", action: "submit" });
+  const onSubmit = vi.fn();
+  editor.onSubmit = onSubmit;
+
+  for (const char of "review this") editor.handleInput(char);
+  editor.handleInput("/");
+  await Promise.resolve();
+
+  expect(onSubmit).not.toHaveBeenCalled();
+  expect(editor.getText()).toBe("review this /compact ");
+});
+
+test("command palette insertion respects existing prompt spacing", async () => {
+  const editor = createAmpEditor({ command: "skill:tdd", action: "insert" });
+
+  for (const char of "use ") editor.handleInput(char);
+  editor.handleInput("/");
+  await Promise.resolve();
+
+  expect(editor.getText()).toBe("use /skill:tdd ");
+});
+
+test("slash slash types a literal slash in the prompt", async () => {
+  const editor = createAmpEditor({ command: "/", action: "literal" });
+  const onSubmit = vi.fn();
+  editor.onSubmit = onSubmit;
+
+  for (const char of "docs") editor.handleInput(char);
+  editor.handleInput("/");
+  await Promise.resolve();
+
+  expect(onSubmit).not.toHaveBeenCalled();
+  expect(editor.getText()).toBe("docs/");
 });
 
 test("skills command opens focused palette and inserts selected skill", async () => {

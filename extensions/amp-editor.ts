@@ -395,7 +395,11 @@ class AmpEditor extends CustomEditor {
     private readonly getWorkingState: () => WorkingState,
     private readonly getExtensionStatus: () => string,
     private readonly getCopyPromptStatus: () => CopyPromptStatus | undefined,
-    private readonly openCommandPalette: (initialQuery: string | undefined, onSelect: (result: CommandPaletteResult) => void) => void,
+    private readonly openCommandPalette: (
+      initialQuery: string | undefined,
+      onSelect: (result: CommandPaletteResult) => void,
+      options?: { forceInsert?: boolean },
+    ) => void,
   ) {
     super(tui, theme, keybindings, { paddingX: 0 });
   }
@@ -405,23 +409,44 @@ class AmpEditor extends CustomEditor {
   }
 
   handleInput(data: string): void {
-    if (data === "/" && this.getText().trim() === "") {
+    if (data === "/" && !this.isShowingAutocomplete()) {
+      const preservePrompt = this.getText().trim() !== "";
       this.openCommandPalette(undefined, (result) => {
-        if (result.action === "insert") {
-          this.insertCommand(result.command);
+        if (result.action === "literal") {
+          this.insertLiteral(result.command);
+        } else if (preservePrompt || result.action === "insert") {
+          this.insertCommand(result.command, preservePrompt);
         } else {
           this.submitCommand(result.command);
         }
-      });
+      }, { forceInsert: preservePrompt });
       return;
     }
 
     super.handleInput(data);
   }
 
-  private insertCommand(command: string): void {
-    this.setText(`/${command} `);
+  private insertCommand(command: string, preservePrompt = false): void {
+    const commandText = `/${command} `;
+    if (preservePrompt) {
+      this.insertTextAtCursor(this.withPromptSeparators(commandText));
+    } else {
+      this.setText(commandText);
+    }
     this.tui.requestRender();
+  }
+
+  private insertLiteral(text: string): void {
+    this.insertTextAtCursor(text);
+    this.tui.requestRender();
+  }
+
+  private withPromptSeparators(text: string): string {
+    const cursor = this.getCursor();
+    const line = this.getLines()[cursor.line] ?? "";
+    const beforeCursor = line.slice(0, cursor.col);
+    const prefix = beforeCursor.length > 0 && !/\s$/.test(beforeCursor) ? " " : "";
+    return `${prefix}${text}`;
   }
 
   private submitCommand(command: string): void {
@@ -937,7 +962,11 @@ export default function (pi: ExtensionAPI) {
     }));
   };
 
-  const openCommandPalette = (initialQuery = "", onSelect: (result: CommandPaletteResult) => void) => {
+  const openCommandPalette = (
+    initialQuery = "",
+    onSelect: (result: CommandPaletteResult) => void,
+    options: { forceInsert?: boolean } = {},
+  ) => {
     const ctx = activeCtx;
     if (!ctx?.hasUI || commandPaletteOpen) return;
 
@@ -951,7 +980,14 @@ export default function (pi: ExtensionAPI) {
         keybindings,
         done,
         getCommandArgumentItems,
-        { hideArgumentSource: true },
+        {
+          hideArgumentSource: true,
+          literalSlashEscape: true,
+          submitOnEnter: !options.forceInsert,
+          helpHint: options.forceInsert
+            ? " type filter · ↑↓ navigate · // insert / · tab/enter insert · esc close "
+            : " type filter · ↑↓ navigate · // insert / · tab insert · enter run · esc close ",
+        },
       ),
       {
         overlay: true,
