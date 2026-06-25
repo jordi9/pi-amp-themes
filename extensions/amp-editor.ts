@@ -30,6 +30,7 @@ const ASK_USER_QUESTION_COLLAPSE_RAW_KEYS = new Set(["\x0f"]);
 const WAITING_NOTIFICATION_INTERVAL_MS = 650;
 const WAITING_NOTIFICATION_PULSE_MS = 60_000;
 const WAITING_NOTIFICATION_FRAMES = ["✦", "✧", "✶", "✧"] as const;
+export const AMP_WAITING_NOTIFICATION_EVENT = "amp:waiting_notification";
 const TERMINAL_FOCUS_IN = "\x1b[I";
 const TERMINAL_FOCUS_OUT = "\x1b[O";
 const TERMINAL_FOCUS_REPORTING_ENABLE = "\x1b[?1004h";
@@ -73,6 +74,12 @@ type WaitingNotificationState = {
   chromeColor: ThemeColor;
 };
 
+export type AmpWaitingNotificationEvent = {
+  active: boolean;
+  startedAt?: number;
+  terminalFocusActive: boolean;
+};
+
 export type VcsInfo = {
   kind: "git" | "jj";
   branch: string | null;
@@ -104,6 +111,12 @@ type ShortcutRegistrar = {
     description: string;
     handler: (ctx: ExtensionContext) => void | Promise<void>;
   }) => void;
+};
+
+type OptionalEventBusAPI = {
+  events?: {
+    emit?: (channel: string, data: unknown) => void;
+  };
 };
 
 type InputListenerResult = { consume?: boolean; data?: string } | undefined;
@@ -1021,6 +1034,12 @@ export default function (pi: ExtensionAPI) {
   let terminalFocusActive = true;
 
   const requestRender = () => activeTui?.requestRender();
+  const emitWaitingNotificationEvent = () => {
+    const payload: AmpWaitingNotificationEvent = waitingNotificationActive && waitingNotificationStartedAt !== undefined
+      ? { active: true, startedAt: waitingNotificationStartedAt, terminalFocusActive }
+      : { active: false, terminalFocusActive };
+    (pi as OptionalEventBusAPI).events?.emit?.(AMP_WAITING_NOTIFICATION_EVENT, payload);
+  };
   const isAskUserQuestionActive = () => activeAskUserQuestionToolCalls.size > 0;
   const isAskUserQuestionCollapseAlias = (data: string): boolean => {
     if (isKeyRelease(data)) return false;
@@ -1113,6 +1132,7 @@ export default function (pi: ExtensionAPI) {
     waitingNotificationActive = false;
     waitingNotificationStartedAt = undefined;
     waitingNotificationFrameIndex = 0;
+    emitWaitingNotificationEvent();
     requestRender();
   };
 
@@ -1121,6 +1141,7 @@ export default function (pi: ExtensionAPI) {
     waitingNotificationStartedAt = Date.now();
     waitingNotificationFrameIndex = 0;
     startWaitingNotificationTimer();
+    emitWaitingNotificationEvent();
     requestRender();
   };
 
@@ -1457,7 +1478,7 @@ export default function (pi: ExtensionAPI) {
   pi.on("session_shutdown", () => {
     disableTerminalFocusReporting();
     stopWorkingTimer();
-    stopWaitingNotificationTimer();
+    clearWaitingNotification();
     stopFinishedStatusTimer();
     clearCopyPromptStatus();
     promptStartedAt = undefined;
