@@ -23,6 +23,7 @@ const WORKING_TOOLS = "Using tools";
 const FINISHED_STATUS_MS = 7000;
 const COPY_PROMPT_STATUS_MS = 3000;
 const COPY_PROMPT_SHORTCUT = "ctrl+shift+x";
+const COMMAND_PALETTE_SHORTCUT = "ctrl+7";
 const ASK_USER_QUESTION_TOOL = "ask_user_question";
 const ASK_USER_QUESTION_COLLAPSE_KEY = "\x1d";
 const ASK_USER_QUESTION_COLLAPSE_ALIASES = ["ctrl+o"] as const;
@@ -567,21 +568,29 @@ class AmpEditor extends CustomEditor {
     this.setTerminalFocusActive(true);
     this.dismissWaitingNotification();
 
-    if (data === "/" && !this.isShowingAutocomplete()) {
-      const preservePrompt = this.getText().trim() !== "";
-      this.openCommandPalette(undefined, (result) => {
-        if (result.action === "literal") {
-          this.insertLiteral(result.command);
-        } else if (preservePrompt || result.action === "insert") {
-          this.insertCommand(result.command, preservePrompt);
-        } else {
-          this.submitCommand(result.command);
-        }
-      }, { forceInsert: preservePrompt });
+    if (data === "/" && this.getText().trim() === "" && !this.isShowingAutocomplete()) {
+      this.openCommandPaletteForCurrentPrompt();
       return;
     }
 
     super.handleInput(data);
+  }
+
+  openCommandPaletteForCurrentPrompt(): void {
+    const preservePrompt = this.getText().trim() !== "";
+    this.openCommandPalette(undefined, (result) => {
+      this.applyCommandPaletteResult(result, preservePrompt);
+    }, { forceInsert: preservePrompt });
+  }
+
+  private applyCommandPaletteResult(result: CommandPaletteResult, preservePrompt: boolean): void {
+    if (result.action === "literal") {
+      this.insertLiteral(result.command);
+    } else if (preservePrompt || result.action === "insert") {
+      this.insertCommand(result.command, preservePrompt);
+    } else {
+      this.submitCommand(result.command);
+    }
   }
 
   private insertCommand(command: string, preservePrompt = false): void {
@@ -1008,6 +1017,7 @@ export default function (pi: ExtensionAPI) {
   const activeAskUserQuestionToolCalls = new Set<string>();
   let activeThinkingLevel = "off";
   let activeCtx: ExtensionContext | undefined;
+  let activeEditor: AmpEditor | undefined;
   let activeTui: TuiWithInputListener | undefined;
   let askUserQuestionInputListenerCleanup: (() => void) | undefined;
   let askUserQuestionInputListenerTui: TuiWithInputListener | undefined;
@@ -1303,6 +1313,14 @@ export default function (pi: ExtensionAPI) {
     },
   });
 
+  (pi as typeof pi & ShortcutRegistrar).registerShortcut?.(COMMAND_PALETTE_SHORTCUT, {
+    description: "Open command palette",
+    handler: (ctx) => {
+      if (!ctx.hasUI) return;
+      activeEditor?.openCommandPaletteForCurrentPrompt();
+    },
+  });
+
   pi.registerCommand("working-animation", {
     description: "Set Amp editor working animation: random or a named animation.",
     getArgumentCompletions: getWorkingAnimationCompletions,
@@ -1360,7 +1378,7 @@ export default function (pi: ExtensionAPI) {
     ctx.ui.setEditorComponent((tui, theme, keybindings) => {
       activeTui = tui;
       installAskUserQuestionInputAliases(tui);
-      return new AmpEditor(
+      const editor = new AmpEditor(
         tui,
         theme,
         keybindings,
@@ -1387,6 +1405,8 @@ export default function (pi: ExtensionAPI) {
         },
         openCommandPalette,
       );
+      activeEditor = editor;
+      return editor;
     });
 
     hideBuiltInWorking(ctx);
@@ -1494,6 +1514,7 @@ export default function (pi: ExtensionAPI) {
     askUserQuestionInputListenerCleanup?.();
     askUserQuestionInputListenerCleanup = undefined;
     askUserQuestionInputListenerTui = undefined;
+    activeEditor = undefined;
     activeTui = undefined;
     activeFooterData = undefined;
   });

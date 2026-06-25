@@ -16,6 +16,11 @@ type AmpEditorLike = {
   onSubmit?: (text: string) => void;
 };
 
+type RegisteredShortcut = {
+  description?: string;
+  handler: (ctx: ExtensionContext) => Promise<void> | void;
+};
+
 function createThemeStub(): ThemeStub {
   return {
     fg(_color: string, text: string) {
@@ -80,8 +85,14 @@ async function flushPromises(): Promise<void> {
   await Promise.resolve();
 }
 
-function createAmpEditor(paletteResult: CommandPaletteResult): AmpEditorLike {
+function createAmpEditorHarness(paletteResult: CommandPaletteResult): {
+  editor: AmpEditorLike;
+  shortcuts: Map<string, RegisteredShortcut>;
+  custom: ReturnType<typeof vi.fn>;
+} {
   const handlers = new Map<string, (event: unknown, ctx: ExtensionContext) => void>();
+  const shortcuts = new Map<string, RegisteredShortcut>();
+  const custom = vi.fn(() => Promise.resolve(paletteResult));
   const pi = {
     on(event: string, handler: (event: unknown, ctx: ExtensionContext) => void) {
       handlers.set(event, handler);
@@ -89,6 +100,9 @@ function createAmpEditor(paletteResult: CommandPaletteResult): AmpEditorLike {
     getThinkingLevel: () => "medium",
     getCommands: () => [],
     registerCommand() {},
+    registerShortcut(key: string, shortcut: RegisteredShortcut) {
+      shortcuts.set(key, shortcut);
+    },
   };
 
   ampEditorExtension(pi as never);
@@ -118,7 +132,7 @@ function createAmpEditor(paletteResult: CommandPaletteResult): AmpEditorLike {
       },
       getContextUsage: () => ({ percent: 12, contextWindow: 200000 }),
       ui: {
-        custom: () => Promise.resolve(paletteResult),
+        custom,
         theme: createThemeStub(),
         setEditorComponent(factory: typeof editorFactory) {
           editorFactory = factory;
@@ -132,11 +146,16 @@ function createAmpEditor(paletteResult: CommandPaletteResult): AmpEditorLike {
   );
 
   expect(editorFactory).toBeDefined();
-  return editorFactory!(
+  const editor = editorFactory!(
     { requestRender() {}, terminal: { rows: 24 } },
     createThemeStub(),
     { matches: () => false },
   );
+  return { editor, shortcuts, custom };
+}
+
+function createAmpEditor(paletteResult: CommandPaletteResult): AmpEditorLike {
+  return createAmpEditorHarness(paletteResult).editor;
 }
 
 test("command palette renders multiline descriptions as one terminal row", () => {
@@ -341,31 +360,8 @@ test("inserting a command from the palette leaves it editable without submitting
   expect(editor.getText()).toBe("/compact ");
 });
 
-test("command palette preserves existing prompt instead of submitting over it", async () => {
-  const editor = createAmpEditor({ command: "compact", action: "submit" });
-  const onSubmit = vi.fn();
-  editor.onSubmit = onSubmit;
-
-  for (const char of "review this") editor.handleInput(char);
-  editor.handleInput("/");
-  await Promise.resolve();
-
-  expect(onSubmit).not.toHaveBeenCalled();
-  expect(editor.getText()).toBe("review this /compact ");
-});
-
-test("command palette insertion respects existing prompt spacing", async () => {
-  const editor = createAmpEditor({ command: "skill:tdd", action: "insert" });
-
-  for (const char of "use ") editor.handleInput(char);
-  editor.handleInput("/");
-  await Promise.resolve();
-
-  expect(editor.getText()).toBe("use /skill:tdd ");
-});
-
-test("slash slash types a literal slash in the prompt", async () => {
-  const editor = createAmpEditor({ command: "/", action: "literal" });
+test("typing slash inside a prompt inserts a literal slash", async () => {
+  const { editor, custom } = createAmpEditorHarness({ command: "compact", action: "insert" });
   const onSubmit = vi.fn();
   editor.onSubmit = onSubmit;
 
@@ -373,8 +369,32 @@ test("slash slash types a literal slash in the prompt", async () => {
   editor.handleInput("/");
   await Promise.resolve();
 
+  expect(custom).not.toHaveBeenCalled();
   expect(onSubmit).not.toHaveBeenCalled();
   expect(editor.getText()).toBe("docs/");
+});
+
+test("command palette shortcut preserves existing prompt instead of submitting over it", async () => {
+  const { editor, shortcuts } = createAmpEditorHarness({ command: "compact", action: "submit" });
+  const onSubmit = vi.fn();
+  editor.onSubmit = onSubmit;
+
+  for (const char of "review this") editor.handleInput(char);
+  await shortcuts.get("ctrl+7")?.handler({ hasUI: true } as ExtensionContext);
+  await flushPromises();
+
+  expect(onSubmit).not.toHaveBeenCalled();
+  expect(editor.getText()).toBe("review this /compact ");
+});
+
+test("command palette shortcut insertion respects existing prompt spacing", async () => {
+  const { editor, shortcuts } = createAmpEditorHarness({ command: "skill:tdd", action: "insert" });
+
+  for (const char of "use ") editor.handleInput(char);
+  await shortcuts.get("ctrl+7")?.handler({ hasUI: true } as ExtensionContext);
+  await flushPromises();
+
+  expect(editor.getText()).toBe("use /skill:tdd ");
 });
 
 test("skills command opens focused palette and inserts selected skill", async () => {

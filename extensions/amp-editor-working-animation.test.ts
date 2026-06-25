@@ -90,19 +90,20 @@ test("formats extension statuses for the Amp editor row", () => {
   expect(formatExtensionStatuses(statuses)).toBe("● impeccable live live polling");
 });
 
-test("registers copy current prompt shortcut", () => {
-  let shortcut: { key: string; description?: string } | undefined;
+test("registers editor shortcuts", () => {
+  const shortcuts = new Map<string, { description?: string }>();
   const pi = {
     on() {},
     getCommands: () => [],
     getThinkingLevel: () => "medium",
     registerCommand() {},
     registerShortcut(key: string, options: { description?: string }) {
-      shortcut = { key, description: options.description };
+      shortcuts.set(key, { description: options.description });
     },
   };
 
   ampEditorExtension(pi as never);
 
-  expect(shortcut).toEqual({ key: "ctrl+shift+x", description: "Copy current prompt to clipboard" });
+  expect(shortcuts.get("ctrl+shift+x")).toEqual({ description: "Copy current prompt to clipboard" });
+  expect(shortcuts.get("ctrl+7")).toEqual({ description: "Open command palette" });
 });
