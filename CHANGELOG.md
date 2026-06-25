@@ -9,9 +9,10 @@
 - Add a jordi9 Industries-branded Amp/Hermes startup header with a large ASCII wordmark, current model/thinking/cwd metadata, polished tool/resource summaries, expanded details, compact hints, and hidden default startup listing.
 - Upgrade bundled `pi-tool-display` to 0.4.2, which uses the current `@earendil-works` Pi peer namespace.
 - Show the active prompt elapsed time next to the Amp editor's `Esc to cancel` working hint, then keep the finished or cancelled elapsed time visible for 7 seconds.
-- Add a minimal pulsing ready star before the Amp editor context usage, flash the editor chrome, and send a terminal bell after successful agent turns, clearing the visual cue when the user returns focus/input or the next turn begins.
+- Add a minimal pulsing ready star before the Amp editor context usage, flash the editor chrome, and send a terminal bell after successful agent turns only when the terminal was already unfocused, clearing the visual cue when the user returns focus/input or the next turn begins.
 - Randomly pick an editor working-status animation per prompt, including the original `~ → ≈ → ≋` Amp wave and new Hermes-inspired spinner styles, with `/working-animation` and argument autocomplete for experimentation.
 - Add `Ctrl+Shift+X` for copying the current prompt editor text to the system clipboard with a transient editor status.
+- Add a `Ctrl+O` alias for collapsing/expanding active `rpiv-ask-user-question` dialogs, so layouts where `Ctrl+]` is awkward can still uncover the hidden transcript.
 - Keep the Amp editor border fixed to the theme's low-thinking color while the thinking level label continues to change color.
 - Use gold/yellow plus bold styling for the `xhigh` thinking label instead of red.
 - Add fun high-context labels in the editor with escalating colors: `dumb`, `dumber`, and `dumbest`.

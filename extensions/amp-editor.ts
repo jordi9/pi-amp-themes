@@ -1,5 +1,4 @@
 import { CustomEditor, type ExtensionAPI, type ExtensionCommandContext, type ExtensionContext, type ReadonlyFooterDataProvider, type ThemeColor } from "@earendil-works/pi-coding-agent";
-import { truncateToWidth, visibleWidth, type AutocompleteItem, type AutocompleteProvider, type Component } from "@earendil-works/pi-tui";
 import { isKeyRelease, matchesKey, truncateToWidth, visibleWidth, type AutocompleteItem, type AutocompleteProvider, type Component } from "@earendil-works/pi-tui";
 import { BUILTIN_COMMAND_PALETTE_ITEMS, CommandPaletteOverlay, type CommandPaletteArgumentItem, type CommandPaletteItem, type CommandPaletteResult, stripAnsi } from "./amp-command-palette.js";
 import { execFileSync, spawnSync } from "node:child_process";
@@ -105,6 +104,17 @@ type ShortcutRegistrar = {
     description: string;
     handler: (ctx: ExtensionContext) => void | Promise<void>;
   }) => void;
+};
+
+type InputListenerResult = { consume?: boolean; data?: string } | undefined;
+
+type TuiWithInputListener = {
+  requestRender(): void;
+  addInputListener?: (listener: (data: string) => InputListenerResult) => () => void;
+};
+
+type FocusedComponentAccessor = {
+  focusedComponent?: { handleInput?: (data: string) => void } | null;
 };
 
 let vcsCache: { cwd: string; at: number; info: VcsInfo } | undefined;
@@ -504,6 +514,7 @@ class AmpEditor extends CustomEditor {
     private readonly getExtensionStatus: () => string,
     private readonly getCopyPromptStatus: () => CopyPromptStatus | undefined,
     private readonly dismissWaitingNotification: () => void,
+    private readonly setTerminalFocusActive: (active: boolean) => void,
     private readonly openCommandPalette: (
       initialQuery: string | undefined,
       onSelect: (result: CommandPaletteResult) => void,
@@ -530,12 +541,17 @@ class AmpEditor extends CustomEditor {
 
   handleInput(data: string): void {
     if (data === TERMINAL_FOCUS_IN) {
+      this.setTerminalFocusActive(true);
       this.dismissWaitingNotification();
       return;
     }
 
-    if (data === TERMINAL_FOCUS_OUT) return;
+    if (data === TERMINAL_FOCUS_OUT) {
+      this.setTerminalFocusActive(false);
+      return;
+    }
 
+    this.setTerminalFocusActive(true);
     this.dismissWaitingNotification();
 
     if (data === "/" && !this.isShowingAutocomplete()) {
@@ -979,7 +995,9 @@ export default function (pi: ExtensionAPI) {
   const activeAskUserQuestionToolCalls = new Set<string>();
   let activeThinkingLevel = "off";
   let activeCtx: ExtensionContext | undefined;
-  let activeTui: { requestRender(): void } | undefined;
+  let activeTui: TuiWithInputListener | undefined;
+  let askUserQuestionInputListenerCleanup: (() => void) | undefined;
+  let askUserQuestionInputListenerTui: TuiWithInputListener | undefined;
   let activeFooterData: ReadonlyFooterDataProvider | undefined;
   let activeAutocompleteProvider: AutocompleteProvider | undefined;
   let commandPaletteOpen = false;
@@ -1000,6 +1018,7 @@ export default function (pi: ExtensionAPI) {
   let finishedStatusTimer: ReturnType<typeof setTimeout> | undefined;
   let copyPromptStatusTimer: ReturnType<typeof setTimeout> | undefined;
   let terminalFocusReportingEnabled = false;
+  let terminalFocusActive = true;
 
   const requestRender = () => activeTui?.requestRender();
   const isAskUserQuestionActive = () => activeAskUserQuestionToolCalls.size > 0;
@@ -1103,6 +1122,16 @@ export default function (pi: ExtensionAPI) {
     waitingNotificationFrameIndex = 0;
     startWaitingNotificationTimer();
     requestRender();
+  };
+
+  const notifyAgentReadyIfInactive = (ctx: ExtensionContext) => {
+    if (terminalFocusActive) {
+      clearWaitingNotification();
+      return;
+    }
+
+    ringTerminalBell(ctx);
+    showWaitingNotification();
   };
 
   const stopWorkingTimer = () => {
@@ -1300,6 +1329,7 @@ export default function (pi: ExtensionAPI) {
 
     activeCtx = ctx;
     activeThinkingLevel = pi.getThinkingLevel();
+    terminalFocusActive = true;
 
     (ctx.ui as typeof ctx.ui & { addAutocompleteProvider?: (factory: (current: AutocompleteProvider) => AutocompleteProvider) => void }).addAutocompleteProvider?.((current) => {
       activeAutocompleteProvider = current;
@@ -1331,6 +1361,9 @@ export default function (pi: ExtensionAPI) {
         () => activeFooterData ? formatExtensionStatuses(activeFooterData.getExtensionStatuses()) : "",
         () => copyPromptStatus,
         clearWaitingNotification,
+        (active) => {
+          terminalFocusActive = active;
+        },
         openCommandPalette,
       );
     });
@@ -1414,8 +1447,7 @@ export default function (pi: ExtensionAPI) {
     stopWorkingTimer();
     if (finishedPromptElapsedMs !== undefined) startFinishedStatusTimer();
     if (!cancelled && ctx.hasUI) {
-      ringTerminalBell(ctx);
-      showWaitingNotification();
+      notifyAgentReadyIfInactive(ctx);
     } else {
       clearWaitingNotification();
     }
@@ -1436,6 +1468,7 @@ export default function (pi: ExtensionAPI) {
     waitingNotificationFrameIndex = 0;
     copyPromptStatus = undefined;
     workingAnimation = undefined;
+    terminalFocusActive = true;
     activeAskUserQuestionToolCalls.clear();
     askUserQuestionInputListenerCleanup?.();
     askUserQuestionInputListenerCleanup = undefined;

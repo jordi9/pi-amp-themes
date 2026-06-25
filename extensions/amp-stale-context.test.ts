@@ -564,7 +564,7 @@ test("amp editor keeps finished elapsed time visible briefly after agent end", (
   }
 });
 
-test("amp editor shows a minimal ready star until input starts", () => {
+test("amp editor only shows the ready star when the terminal is already unfocused", () => {
   vi.useFakeTimers();
   vi.setSystemTime(1_000);
   const { pi, handlers } = createPiStub(() => "medium");
@@ -603,7 +603,7 @@ test("amp editor shows a minimal ready star until input starts", () => {
     sessionStart({ type: "session_start", reason: "startup" }, ctx);
 
     const beforeAgentStart = expectDefined(handlers.get("before_agent_start"), "before_agent_start handler should be registered");
-    beforeAgentStart({ type: "before_agent_start" }, ctx);
+    const agentEnd = expectDefined(handlers.get("agent_end"), "agent_end handler should be registered");
 
     const createEditor = expectDefined(editorFactory, "editor factory should be registered");
     const editor = createEditor(
@@ -611,9 +611,18 @@ test("amp editor shows a minimal ready star until input starts", () => {
       createThemeStub(),
       { matches: () => false },
     );
+    (editor as unknown as { focused: boolean }).focused = true;
 
+    beforeAgentStart({ type: "before_agent_start" }, ctx);
     vi.setSystemTime(66_000);
-    const agentEnd = expectDefined(handlers.get("agent_end"), "agent_end handler should be registered");
+    agentEnd({ type: "agent_end", messages: [] }, ctx);
+
+    expect(editor.render(200).join("\n")).not.toContain("✦ 12% of 200k");
+
+    vi.setSystemTime(70_000);
+    beforeAgentStart({ type: "before_agent_start" }, ctx);
+    editor.handleInput("\x1b[O");
+    vi.setSystemTime(75_000);
     agentEnd({ type: "agent_end", messages: [] }, ctx);
 
     const waitingRender = editor.render(200);
@@ -621,15 +630,13 @@ test("amp editor shows a minimal ready star until input starts", () => {
     expect(waitingRender[0]).not.toContain("Agent is ready");
     expect(waitingRender[0]).not.toContain("Enter");
 
-    agentEnd({ type: "agent_end", messages: [] }, ctx);
     editor.handleInput("\x1b[I");
     expect(editor.render(200).join("\n")).not.toContain("✦ 12% of 200k");
 
-    agentEnd({ type: "agent_end", messages: [] }, ctx);
-    (editor as unknown as { focused: boolean }).focused = true;
-    expect(editor.render(200).join("\n")).not.toContain("✦ 12% of 200k");
-
-    (editor as unknown as { focused: boolean }).focused = false;
+    vi.setSystemTime(80_000);
+    beforeAgentStart({ type: "before_agent_start" }, ctx);
+    editor.handleInput("\x1b[O");
+    vi.setSystemTime(85_000);
     agentEnd({ type: "agent_end", messages: [] }, ctx);
     editor.handleInput("a");
 
@@ -640,7 +647,7 @@ test("amp editor shows a minimal ready star until input starts", () => {
   }
 });
 
-test("amp editor flashes the editor chrome while waiting for input", () => {
+test("amp editor flashes the editor chrome while waiting for input after focus leaves", () => {
   vi.useFakeTimers();
   vi.setSystemTime(1_000);
   const { pi, handlers } = createPiStub(() => "medium");
@@ -648,7 +655,7 @@ test("amp editor flashes the editor chrome while waiting for input", () => {
   ampEditorExtension(pi);
 
   let editorFactory:
-    | ((tui: unknown, theme: ThemeStub, keybindings: { matches(): boolean }) => { render(width: number): string[] })
+    | ((tui: unknown, theme: ThemeStub, keybindings: { matches(): boolean }) => { render(width: number): string[]; handleInput(data: string): void })
     | undefined;
 
   const ctx = {
@@ -688,6 +695,7 @@ test("amp editor flashes the editor chrome while waiting for input", () => {
       { matches: () => false },
     );
 
+    editor.handleInput("\x1b[O");
     vi.setSystemTime(66_000);
     const agentEnd = expectDefined(handlers.get("agent_end"), "agent_end handler should be registered");
     agentEnd({ type: "agent_end", messages: [] }, ctx);
